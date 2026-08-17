@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Sparks",
+    "slug": "mobile",
+    "scheme": "sparks",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Sparks necesita Face ID para verificar tu perfil de forma segura y proteger a la comunidad contra cuentas falsas.",
+        "NSCameraUsageDescription": "Sparks necesita acceso a la cámara para tomar selfies de verificación y fotos de perfil.",
+        "NSPhotoLibraryUsageDescription": "Sparks necesita acceso a tus fotos para seleccionar tu foto de perfil e imágenes.",
+        "NSMicrophoneUsageDescription": "Sparks necesita acceso al micrófono para grabaciones de audio."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-web-browser",
+      "expo-av",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Sparks necesita acceso a tus fotos para seleccionar tu foto de perfil.",
+          "cameraPermission": "Sparks necesita acceso a la cámara para fotos de verificación y perfil."
+        }
+      ]
+    ]
+  }
+}

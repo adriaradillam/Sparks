@@ -1,0 +1,88 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                 Int      @id @default(autoincrement())
+  email              String   @unique
+  passwordHash       String
+  name               String
+  age                Int
+  bio                String   @default("")
+  avatarUrl          String   @default("default")
+  photos             String   @default("[]") // JSON stringified array
+  lat                Float    @default(40.416775)
+  lng                Float    @default(-3.703790)
+  pronouns           String   @default("Ella / She")
+  intention          String   @default("dating")
+  tags               String   @default("[]") // JSON stringified array
+  anthem             String?  // JSON stringified SongAnthem
+  spotify            String?  // JSON stringified SpotifyProfile
+  isVerified         Boolean  @default(false)
+  ghostMode          Boolean  @default(false)
+  approxDistanceOnly Boolean  @default(false)
+  resetToken         String?
+  resetTokenExpires  BigInt?
+  createdAt          DateTime @default(now())
+}
+
+model Conversation {
+  id             Int      @id @default(autoincrement())
+  participant1Id Int
+  participant2Id Int
+  lastMessage    String   @default("")
+  updatedAt      DateTime @default(now())
+}
+
+model Message {
+  id             Int      @id @default(autoincrement())
+  conversationId Int
+  senderId       Int
+  text           String   @default("")
+  type           String   @default("text") // text, icebreaker, ephemeral_image
+  imageUrl       String?
+  viewed         Boolean  @default(false)
+  isRead         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+}
+
+model MatchInteraction {
+  id         Int      @id @default(autoincrement())
+  fromUserId Int
+  toUserId   Int
+  type       String   @default("like") // like, pass
+  createdAt  DateTime @default(now())
+}
+
+model EventPlan {
+  id           Int      @id @default(autoincrement())
+  creatorId    Int
+  title        String
+  category     String   @default("coffee")
+  description  String
+  locationName String
+  dateTimeText String
+  attendeeIds  String   @default("[]") // JSON stringified array
+  createdAt    DateTime @default(now())
+}
+
+model BlockRelationship {
+  id        Int      @id @default(autoincrement())
+  blockerId Int
+  blockedId Int
+  createdAt DateTime @default(now())
+}
+
+model UserReport {
+  id             Int      @id @default(autoincrement())
+  reporterId     Int
+  reportedUserId Int
+  reason         String
+  description    String?
+  createdAt      DateTime @default(now())
+}

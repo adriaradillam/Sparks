@@ -5,16 +5,16 @@ import {
   View,
   Modal,
   TouchableOpacity,
-  ScrollView,
-  SafeAreaView
+  ScrollView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 const SAMPLE_NOTES = [
-  { id: '1', title: 'Lista de la compra 🛒', date: 'Hoy, 16:40', preview: 'Leche de avena, café de especialidad, fruta, pan integral...' },
-  { id: '2', title: 'Ideas regalo cumpleaños Sara 🎁', date: 'Ayer', preview: 'Libro de poesía, maceta de cerámica, sudadera vintage...' },
-  { id: '3', title: 'Apuntes clase de diseño 💻', date: '12 Ago', preview: 'Revisar paleta de colores HSL, tipografías legibles...' },
-  { id: '4', title: 'Películas pendientes 🎬', date: '8 Ago', preview: 'Past Lives, Portrait of a Lady on Fire, Carol...' }
+  { id: '1', title: 'Lista de la compra', date: 'Hoy, 16:40', preview: 'Leche de avena, café de especialidad, fruta, pan integral...' },
+  { id: '2', title: 'Ideas regalo cumpleaños Sara', date: 'Ayer', preview: 'Libro de poesía, maceta de cerámica, sudadera vintage...' },
+  { id: '3', title: 'Apuntes clase de diseño', date: '12 Ago', preview: 'Revisar paleta de colores HSL, tipografías legibles...' },
+  { id: '4', title: 'Películas pendientes', date: '8 Ago', preview: 'Past Lives, Portrait of a Lady on Fire, Carol...' }
 ];
 
 export default function PanicDisguiseModal({ visible, onClose }) {

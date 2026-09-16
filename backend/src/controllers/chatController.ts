@@ -3,14 +3,14 @@ import { AuthRequest } from '../middleware/auth';
 import { memoryStore, MessageType } from '../store/memoryStore';
 
 const ICEBREAKERS_LIST = [
-  '¿Cuál es tu canción sáfica favorita de todos los tiempos? 🎵✨',
-  '¿Eres más de primera cita con café tranquilo o plan improvisado? ☕🍷',
-  '¿Cuál es la película o serie queer que más te ha marcado? 🎬🍿',
-  'Si pudieras teletransportarte a cualquier ciudad ahora mismo, ¿a cuál irías? ✈️🌍',
-  '¿Cuál es tu placer culpable inconfesable? 🙈🍕',
-  '¿Gatos, perros o jungla de plantas en casa? 🐾🌿',
-  '¿Cuál es el mejor concierto al que has ido en tu vida? 🎸🔥',
-  'Si tuviéramos una cita perfecta este finde, ¿qué plan haríamos? 💖'
+  '¿Cuál es tu canción sáfica favorita de todos los tiempos?',
+  '¿Eres más de primera cita con café tranquilo o plan improvisado?',
+  '¿Cuál es la película o serie queer que más te ha marcado?',
+  'Si pudieras teletransportarte a cualquier ciudad ahora mismo, ¿a cuál irías?',
+  '¿Cuál es tu placer culpable inconfesable?',
+  '¿Gatos, perros o jungla de plantas en casa?',
+  '¿Cuál es el mejor concierto al que has ido en tu vida?',
+  'Si tuviéramos una cita perfecta este finde, ¿qué plan haríamos?'
 ];
 
 export const getIcebreakers = async (req: Request, res: Response) => {
@@ -77,6 +77,24 @@ export const startChatWithUser = async (req: AuthRequest, res: Response) => {
     const partner = memoryStore.users.find((u) => u.id === targetUserId);
     if (!partner) {
       return res.status(404).json({ error: 'Usuaria no encontrada.' });
+    }
+
+    // Comprobar que existe un match previo o conversación activa
+    const hasExistingConv = memoryStore.conversations.some(
+      (c) => c.participantIds.includes(currentUserId) && c.participantIds.includes(targetUserId)
+    );
+    const hasMutualLike =
+      memoryStore.matches.some(
+        (m) => m.fromUserId === currentUserId && m.toUserId === targetUserId && m.type === 'like'
+      ) &&
+      memoryStore.matches.some(
+        (m) => m.fromUserId === targetUserId && m.toUserId === currentUserId && m.type === 'like'
+      );
+
+    if (!hasExistingConv && !hasMutualLike) {
+      return res.status(403).json({
+        error: 'Solo puedes abrir una conversación privada si habéis hecho Match mutuo.'
+      });
     }
 
     const conv = memoryStore.getOrCreateConversation(currentUserId, targetUserId);
@@ -172,20 +190,20 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
       setTimeout(() => {
         if (messageType === 'icebreaker') {
           const icebreakerReplies = [
-            '¡Uff qué buena pregunta! Definitivamente café con paseo improvisado ☕✨ ¿Y tú?',
-            '¡Girl in Red y boygenius sin duda alguna! 🎸 ¿Las escuchas?',
-            '¡Plan perfecto: cervecita al atardecer y luego lo que surja! 🌅🍻'
+            '¡Uff qué buena pregunta! Definitivamente café con paseo improvisado. ¿Y tú?',
+            '¡Girl in Red y boygenius sin duda alguna! ¿Las escuchas?',
+            '¡Plan perfecto: unas cañas al atardecer y luego lo que surja!'
           ];
           const reply = icebreakerReplies[Math.floor(Math.random() * icebreakerReplies.length)];
           memoryStore.addMessage(conversationId, partnerId, reply);
         } else if (messageType === 'ephemeral_image') {
-          memoryStore.addMessage(conversationId, partnerId, '¡Qué foto tan bonita! Me encanta 🥰🔥');
+          memoryStore.addMessage(conversationId, partnerId, '¡Qué foto tan bonita! Me encanta.');
         } else {
           const automatedReplies = [
-            '¡Hola bonita! Qué bueno coincidir por aquí ✨',
-            '¡Qué guay tu perfil! ¿De qué zona eres? 😊',
-            'Me encantó que me hablaras 💖',
-            '¿Te apetece tomar un café esta semana? ☕'
+            '¡Hola! Qué bueno coincidir por aquí.',
+            '¡Qué guay tu perfil! ¿De qué zona eres?',
+            'Me encantó que me hablaras.',
+            '¿Te apetece tomar un café esta semana?'
           ];
           const reply = automatedReplies[Math.floor(Math.random() * automatedReplies.length)];
           memoryStore.addMessage(conversationId, partnerId, reply);

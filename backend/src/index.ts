@@ -21,6 +21,20 @@ import { swaggerSpec } from './swagger';
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
+// Panel de Administración Web de Sparks
+app.use('/admin', express.static(path.join(__dirname, '../public/admin')));
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/admin/index.html'));
+});
+
+// Páginas Públicas de Términos de Servicio y Política de Privacidad
+app.get(['/legal/terms', '/terms'], (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/legal/terms.html'));
+});
+app.get(['/legal/privacy', '/privacy'], (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/legal/privacy.html'));
+});
+
 // Documentación interactiva Swagger / OpenAPI
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 

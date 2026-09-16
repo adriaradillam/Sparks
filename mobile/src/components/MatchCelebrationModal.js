@@ -10,7 +10,7 @@ import {
   Dimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getAvatarSource } from '../screens/ProfileScreen';
+import { getAvatarSource } from '../utils/avatar';
 
 const { width } = Dimensions.get('window');
 
@@ -89,7 +89,7 @@ export default function MatchCelebrationModal({
 
           {/* Título de Celebración */}
           <Text style={styles.superTitle}>¡HA SURGIDO UN SPARK!</Text>
-          <Text style={styles.mainTitle}>¡Es un Match! ✨💖</Text>
+          <Text style={styles.mainTitle}>¡Es un Match!</Text>
           <Text style={styles.subtitle}>
             A ti y a <Text style={{ fontWeight: 'bold', color: '#ff4d6d' }}>{partner.name}</Text> os ha gustado vuestro perfil mutuamente.
           </Text>

@@ -13,29 +13,24 @@ import {
   Switch,
   Platform,
   Animated,
-  SafeAreaView,
   Linking
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { apiRequest, uploadPhoto } from '../api';
-import { INTENTION_LABELS } from './ExploreScreen';
+import { INTENTION_LABELS } from '../constants';
 import BlockedUsersModal from '../components/BlockedUsersModal';
 import CommunityGuidelinesModal from '../components/CommunityGuidelinesModal';
 import PanicDisguiseModal from '../components/PanicDisguiseModal';
 import LegalTermsModal from '../components/LegalTermsModal';
+import AdminModerationScreen from './AdminModerationScreen';
+import { getAvatarSource } from '../utils/avatar';
 
-const defaultAvatarImg = require('../../assets/default_avatar.png');
-
-export const getAvatarSource = (uri) => {
-  if (!uri || uri === 'default' || uri === 'DEFAULT_AVATAR' || uri.includes('placeholder')) {
-    return defaultAvatarImg;
-  }
-  return { uri };
-};
+export { getAvatarSource };
 
 // Necesario para que el navegador pueda cerrar la sesión OAuth correctamente
 WebBrowser.maybeCompleteAuthSession();
@@ -81,7 +76,7 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [verifyModalVisible, setVerifyModalVisible] = useState(false);
   const [anthemModalVisible, setAnthemModalVisible] = useState(false);
-  const [availableAnthems, setAvailableAnthems] = useState([]);
+  const [adminModalVisible, setAdminModalVisible] = useState(false);
 
   // Estados de Spotify OAuth
   const [spotifyLoading, setSpotifyLoading] = useState(false);
@@ -94,18 +89,13 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
   const [spotifySearchResults, setSpotifySearchResults] = useState([]);
   const [searchingSpotify, setSearchingSpotify] = useState(false);
 
-  // Estados de Malla Facial Biométrica 468 Puntos
-  const [capturedSelfie, setCapturedSelfie] = useState(null);
-  const [scanningState, setScanningState] = useState('idle');
-  const [scanStep, setScanStep] = useState(0);
-  const [matchScore, setMatchScore] = useState(0);
-  const [biometricTitle, setBiometricTitle] = useState('');
-  const [biometricReason, setBiometricReason] = useState('');
-  const [biometricMetrics, setBiometricMetrics] = useState(null);
-  const [verifying, setVerifying] = useState(false);
+  // Estados de Verificación Biométrica Real (Face ID / Huella / Biometría)
+  const [biometricType, setBiometricType] = useState('Face ID');
+  const [verifyState, setVerifyState] = useState('idle'); // 'idle' | 'authenticating' | 'success' | 'error' | 'no_hardware'
+  const [verifyErrorMsg, setVerifyErrorMsg] = useState('');
 
-  // Animaciones del láser
-  const scanAnim = useRef(new Animated.Value(0)).current;
+  // Animación de pulso del radar biométrico
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // Estados de edición de perfil
   const [name, setName] = useState(user?.name || '');
@@ -129,9 +119,34 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
   const [guidelinesModalVisible, setGuidelinesModalVisible] = useState(false);
   const [panicModalVisible, setPanicModalVisible] = useState(false);
   const [legalModalVisible, setLegalModalVisible] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState('terms');
+
+  const openLegalModal = (tab = 'terms') => {
+    setLegalModalTab(tab);
+    setLegalModalVisible(true);
+  };
 
   useEffect(() => {
     fetchAnthems();
+    checkBiometricSupport();
+
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.15,
+          duration: 1100,
+          useNativeDriver: true
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1100,
+          useNativeDriver: true
+        })
+      ])
+    );
+    pulseLoop.start();
+
+    return () => pulseLoop.stop();
   }, []);
 
   const fetchAnthems = async () => {
@@ -183,19 +198,6 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
     }, 400);
     return () => clearTimeout(delayDebounce);
   }, [spotifySearchQuery, spotifyData?.accessToken]);
-
-  useEffect(() => {
-    if (scanningState === 'scanning') {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(scanAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
-          Animated.timing(scanAnim, { toValue: 0, duration: 900, useNativeDriver: true })
-        ])
-      ).start();
-    } else {
-      scanAnim.stopAnimation();
-    }
-  }, [scanningState]);
 
   const toggleTag = (tag) => {
     if (selectedTags.includes(tag)) {
@@ -296,7 +298,7 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
       };
       setSpotifyData(newSpotify);
       onUpdateUser({ ...user, spotify: newSpotify });
-      Alert.alert('¡Spotify vinculado! 🟢', `Conectada con éxito como @${newSpotify.username}`);
+      Alert.alert('¡Spotify vinculado!', `Conectada con éxito como @${newSpotify.username}`);
     } catch (err) {
       console.error('Error Spotify PKCE:', err);
       Alert.alert('Error', `No se pudo completar la conexión con Spotify: ${err.message}`);
@@ -369,7 +371,7 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
         method: 'PUT',
         body: JSON.stringify({
           name: name.trim(),
-          age: parseInt(age),
+          age: Number.parseInt(age, 10),
           bio: bio.trim(),
           avatarUrl,
           pronouns,
@@ -479,6 +481,7 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
         Alert.alert('¡Foto actualizada!', 'Tu nueva foto de perfil se ha guardado en el servidor.');
       }
     } catch (err) {
+      console.warn('Error al seleccionar foto de galería:', err);
       Alert.alert('Error', 'No se pudo cargar la foto seleccionada.');
     }
   };
@@ -496,6 +499,7 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
       }
       Alert.alert('Foto restablecida', 'Se ha establecido la silueta por defecto.');
     } catch (err) {
+      console.warn('Error al restablecer foto por defecto:', err);
       Alert.alert('Error', 'No se pudo restablecer la foto.');
     }
   };
@@ -533,130 +537,108 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
     }
   };
 
-  // 1. Abrir Cámara para Capturar Malla Facial 468 Puntos
-  const handleLaunchCamera = async () => {
+  // 1. Detección y Comprobación Real de Soporte de Biometría
+  const checkBiometricSupport = async () => {
     try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permiso de Cámara',
-          'Se necesita acceso a la cámara frontal para escanear los 468 puntos de la malla facial.',
-          [
-            { text: 'Elegir de Galería', onPress: handleLaunchGallery },
-            { text: 'Cancelar', style: 'cancel' }
-          ]
+      const compatible = await LocalAuthentication.hasHardwareAsync();
+
+      if (compatible) {
+        const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+        if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+          setBiometricType('Face ID');
+        } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+          setBiometricType('Touch ID / Huella');
+        } else if (types.includes(LocalAuthentication.AuthenticationType.IRIS)) {
+          setBiometricType('Sensor de Iris');
+        } else {
+          setBiometricType(Platform.OS === 'ios' ? 'Face ID' : 'Biometría');
+        }
+      } else {
+        setBiometricType(Platform.OS === 'ios' ? 'Face ID' : 'Biometría');
+      }
+    } catch (err) {
+      console.warn('No se pudo determinar soporte biométrico:', err);
+      setBiometricType(Platform.OS === 'ios' ? 'Face ID' : 'Biometría');
+    }
+  };
+
+  // 2. Abrir Modal de Verificación Biométrica
+  const handleOpenVerifyModal = async () => {
+    await checkBiometricSupport();
+    setVerifyState('idle');
+    setVerifyErrorMsg('');
+    setVerifyModalVisible(true);
+  };
+
+  // 3. Ejecutar Autenticación Biométrica Real con Hardware Nativo
+  const handlePerformBiometricVerification = async () => {
+    try {
+      setVerifyState('authenticating');
+      setVerifyErrorMsg('');
+
+      const compatible = await LocalAuthentication.hasHardwareAsync();
+      const enrolled = await LocalAuthentication.isEnrolledAsync();
+
+      if (!compatible) {
+        setVerifyState('no_hardware');
+        setVerifyErrorMsg('Tu dispositivo no dispone de sensor biométrico compatible.');
+        return;
+      }
+
+      if (!enrolled) {
+        setVerifyState('no_hardware');
+        setVerifyErrorMsg(
+          `No tienes ${biometricType} configurado en tu móvil. Actívalo en los Ajustes de tu dispositivo para poder verificar tu identidad de verdad.`
         );
         return;
       }
 
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        allowsEditing: false,
-        quality: 0.85
+      // Ejecución real del sensor biométrico del hardware (Face ID / Huella / Biometría)
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: `Verifica tu identidad con ${biometricType} en Sparks`,
+        cancelLabel: 'Cancelar',
+        fallbackLabel: 'Usar código del teléfono',
+        disableDeviceFallback: false
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const photoUri = result.assets[0].uri;
-        processMeshScan(photoUri);
-      }
-    } catch (err) {
-      console.warn('Camera launch error:', err);
-      Alert.alert(
-        'Aviso de Cámara',
-        'No se pudo inicializar la cámara. Puedes seleccionar una foto de tu galería.',
-        [
-          { text: 'Abrir Galería', onPress: handleLaunchGallery },
-          { text: 'Cancelar', style: 'cancel' }
-        ]
-      );
-    }
-  };
-
-  // 2. Elegir Foto de Galería
-  const handleLaunchGallery = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permiso necesario', 'Se necesita acceso a la galería para seleccionar la imagen a analizar.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: false,
-        quality: 0.85
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const photoUri = result.assets[0].uri;
-        processMeshScan(photoUri);
-      }
-    } catch (err) {
-      Alert.alert('Error', err.message);
-    }
-  };
-
-  // 3. Proceso de Mapeo de Malla 468 Nodos y Telemetría
-  const processMeshScan = async (photoUri, forcedMode = null) => {
-    setCapturedSelfie(photoUri);
-    setScanningState('scanning');
-    setScanStep(1);
-    setMatchScore(0);
-    setBiometricTitle('');
-    setBiometricReason('');
-    setBiometricMetrics(null);
-
-    setTimeout(() => {
-      setScanStep(2);
-    }, 900);
-
-    setTimeout(() => {
-      setScanStep(3);
-    }, 1800);
-
-    setTimeout(async () => {
-      try {
-        const res = await apiRequest('/api/users/verify-facial-match', {
+      // VALIDACIÓN ESTRICTA: Solo si el sensor del teléfono certifica coincidencia real
+      if (result.success) {
+        const res = await apiRequest('/api/users/verify', {
           method: 'POST',
           body: JSON.stringify({
-            selfieUri: photoUri,
-            forceMode: forcedMode
+            method: biometricType
           })
         });
 
-        setMatchScore(res.score);
-        setBiometricTitle(res.title);
-        setBiometricReason(res.reason);
-        setBiometricMetrics(res.metrics);
+        const verifiedAt = res.verifiedAt || new Date().toISOString();
+        const verificationMethod = res.verificationMethod || biometricType;
 
-        if (res.success) {
-          setScanningState('matched');
+        onUpdateUser({
+          ...user,
+          isVerified: true,
+          verifiedAt,
+          verificationMethod
+        });
+
+        setVerifyState('success');
+      } else {
+        // Fallo real o cancelación: ¡NO se verifica!
+        setVerifyState('error');
+        if (result.error === 'user_cancel') {
+          setVerifyErrorMsg('Has cancelado la verificación biométrica.');
+        } else if (result.error === 'not_enrolled') {
+          setVerifyErrorMsg(`No tienes ${biometricType} registrado en este teléfono.`);
+        } else if (result.error === 'lockout') {
+          setVerifyErrorMsg('Demasiados intentos fallidos. Sensor bloqueado temporalmente por seguridad.');
         } else {
-          setScanningState('mismatch');
+          setVerifyErrorMsg(
+            `No se pudo verificar tu ${biometricType}. El sensor biométrico no reconoció tu identidad o no coincidió.`
+          );
         }
-      } catch (err) {
-        setMatchScore(14.2);
-        setBiometricTitle('Fallo de Mapeo Facial');
-        setBiometricReason('Las coordenadas de la malla facial no concuerdan con el perfil.');
-        setScanningState('mismatch');
       }
-    }, 2700);
-  };
-
-  // 4. Confirmación y Asignación de Check Azul
-  const handleConfirmVerification = async () => {
-    setVerifying(true);
-    try {
-      const data = await apiRequest('/api/users/verify', { method: 'POST' });
-      onUpdateUser({ ...user, isVerified: true });
-      setVerifyModalVisible(false);
-      setCapturedSelfie(null);
-      setScanningState('idle');
-      Alert.alert('¡Perfil Verificado!', data.message);
     } catch (err) {
-      Alert.alert('Error al verificar', err.message);
-    } finally {
-      setVerifying(false);
+      setVerifyState('error');
+      setVerifyErrorMsg(err.message || 'Error al conectar con el sensor biométrico.');
     }
   };
 
@@ -732,13 +714,443 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
     }
   });
 
-  const scanTranslateY = scanAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-50, 50]
-  });
-
   const activeAnthem = user?.anthem || selectedAnthem;
   const isSpotifyLinked = spotifyData?.connected;
+
+  const renderAnthemSection = () => {
+    if (!isSpotifyLinked) {
+      return (
+        <TouchableOpacity
+          style={[styles.anthemCard, { backgroundColor: isDarkMode ? '#0a2312' : '#f4fbf5', borderColor: isDarkMode ? '#1b4332' : '#d8f3dc', borderStyle: 'dashed' }]}
+          onPress={handleConnectSpotify}
+          activeOpacity={0.85}
+        >
+          <View style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: '#1db95420', alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="musical-note" size={24} color="#1db954" />
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={[styles.anthemTitle, { color: theme.colors.textPrimary, fontSize: 14 }]} numberOfLines={1}>
+              Conectar con Spotify
+            </Text>
+            <Text style={[styles.anthemArtist, { color: theme.colors.textMuted, fontSize: 12 }]} numberOfLines={2}>
+              Enlaza tu cuenta para elegir tu canción favorita del catálogo oficial.
+            </Text>
+          </View>
+          <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: '#1db954', flexDirection: 'row', alignItems: 'center' }}>
+            <Ionicons name="link-outline" size={13} color="#ffffff" style={{ marginRight: 4 }} />
+            <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#ffffff' }}>Enlazar</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    if (activeAnthem) {
+      return (
+        <TouchableOpacity
+          style={[styles.anthemCard, { backgroundColor: isDarkMode ? '#141d17' : '#f4fbf5', borderColor: isDarkMode ? '#1db95440' : '#b7e4c7' }]}
+          onPress={() => setAnthemModalVisible(true)}
+          activeOpacity={0.85}
+        >
+          <Image source={{ uri: activeAnthem.coverUrl }} style={styles.anthemCover} />
+          <View style={styles.anthemInfo}>
+            <Text style={[styles.anthemTitle, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+              {activeAnthem.title}
+            </Text>
+            <Text style={[styles.anthemArtist, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+              {activeAnthem.artist}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#1db954', alignItems: 'center', justifyContent: 'center', marginRight: 4 }}>
+                <Ionicons name="musical-note" size={6} color="#000" />
+              </View>
+              <Text style={{ fontSize: 10, color: '#1db954', fontWeight: 'bold' }}>Spotify Track</Text>
+            </View>
+          </View>
+
+          <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: isDarkMode ? '#1b4332' : '#d8f3dc', flexDirection: 'row', alignItems: 'center' }}>
+            <Ionicons name="sparkles" size={13} color="#1db954" style={{ marginRight: 4 }} />
+            <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#1db954' }}>Top Song</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        style={[styles.anthemCard, { backgroundColor: isDarkMode ? '#141d17' : '#f4fbf5', borderColor: isDarkMode ? '#1db95440' : '#b7e4c7', borderStyle: 'dashed' }]}
+        onPress={() => setAnthemModalVisible(true)}
+        activeOpacity={0.85}
+      >
+        <View style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: '#1db95420', alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="search" size={24} color="#1db954" />
+        </View>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={[styles.anthemTitle, { color: theme.colors.textPrimary, fontSize: 14 }]} numberOfLines={1}>
+            Elige tu obsesión musical
+          </Text>
+          <Text style={[styles.anthemArtist, { color: theme.colors.textMuted, fontSize: 12 }]} numberOfLines={2}>
+            Toca para buscar y seleccionar tu canción favorita en Spotify.
+          </Text>
+        </View>
+        <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: '#1db954', flexDirection: 'row', alignItems: 'center' }}>
+          <Ionicons name="add" size={14} color="#ffffff" style={{ marginRight: 2 }} />
+          <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#ffffff' }}>Buscar</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderSpotifySearchResults = () => {
+    if (spotifySearchResults.length > 0) {
+      return (
+        <>
+          <Text style={[styles.searchResultsHeader, { color: theme.colors.textSecondary }]}>
+            RESULTADOS EN SPOTIFY:
+          </Text>
+          {spotifySearchResults.map((track) => (
+            <TouchableOpacity
+              key={track.id}
+              style={[
+                styles.anthemChoiceItem,
+                { backgroundColor: isDarkMode ? '#280814' : '#f8f9fa', borderColor: theme.colors.border }
+              ]}
+              onPress={async () => {
+                const newAnthem = {
+                  id: track.id,
+                  title: track.title,
+                  artist: track.artist,
+                  coverUrl: track.coverUrl,
+                  album: track.album
+                };
+                setSelectedAnthem(newAnthem);
+                setAnthemModalVisible(false);
+                try {
+                  await apiRequest('/api/users/me', {
+                    method: 'PUT',
+                    body: JSON.stringify({ anthem: newAnthem })
+                  });
+                  onUpdateUser({ ...user, anthem: newAnthem });
+                } catch (e) {
+                  console.warn('Error al guardar nuevo anthem en el perfil:', e);
+                }
+              }}
+            >
+              <Image source={{ uri: track.coverUrl }} style={styles.anthemChoiceCover} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.anthemTitle, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+                  {track.title}
+                </Text>
+                <Text style={[styles.anthemArtist, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                  {track.artist}
+                </Text>
+                {track.album ? (
+                  <Text style={{ fontSize: 10, color: theme.colors.textMuted, marginTop: 2 }} numberOfLines={1}>
+                    {track.album}
+                  </Text>
+                ) : null}
+              </View>
+              <View style={styles.selectGreenPill}>
+                <Text style={styles.selectGreenPillText}>Elegir</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </>
+      );
+    }
+
+    if (spotifySearchQuery.trim()) {
+      return (
+        <View style={{ alignItems: 'center', paddingVertical: 36, paddingHorizontal: 20 }}>
+          <Text style={{ fontSize: 14, color: theme.colors.textMuted, textAlign: 'center' }}>
+            No se encontraron canciones en Spotify para "{spotifySearchQuery}".
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={{ alignItems: 'center', paddingVertical: 40, paddingHorizontal: 24 }}>
+        <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: '#1db95415', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+          <Ionicons name="search" size={26} color="#1db954" />
+        </View>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.textPrimary, textAlign: 'center', marginBottom: 6 }}>
+          Escribe el nombre de una canción
+        </Text>
+        <Text style={{ fontSize: 12, color: theme.colors.textSecondary, textAlign: 'center', lineHeight: 18 }}>
+          Busca por título o artista para encontrar tu obsesión musical en Spotify y destacarla en tu perfil.
+        </Text>
+      </View>
+    );
+  };
+
+  const renderBiometricModalBody = () => {
+    if (user?.isVerified && verifyState === 'idle') {
+      return (
+        <View style={styles.bioContentContainer}>
+          <View style={styles.bioSuccessRingContainer}>
+            <View style={[styles.bioCertGlow, { backgroundColor: isDarkMode ? '#00334e' : '#e0f2fe' }]}>
+              <Ionicons name="shield-checkmark" size={44} color="#0077b6" />
+            </View>
+            <View style={styles.bioCertMiniBadge}>
+              <Ionicons name="checkmark" size={14} color="#ffffff" />
+            </View>
+          </View>
+
+          <Text style={[styles.bioSuccessTitle, { color: theme.colors.textPrimary }]}>
+            ¡Perfil Oficialmente Verificado!
+          </Text>
+          <Text style={[styles.bioSuccessSub, { color: theme.colors.textSecondary }]}>
+            Tu identidad ha sido comprobada con biometría real. Cuentas con el Check Azul de Sparks activo en todas tus apariciones.
+          </Text>
+
+          <View
+            style={[
+              styles.bioCertCard,
+              {
+                backgroundColor: isDarkMode ? '#001b29' : '#f0f9ff',
+                borderColor: '#0077b6'
+              }
+            ]}
+          >
+            <View style={styles.bioCertRow}>
+              <Text style={[styles.bioCertLabel, { color: theme.colors.textMuted }]}>
+                Distintivo:
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="checkmark-circle" size={15} color="#0077b6" style={{ marginRight: 4 }} />
+                <Text style={[styles.bioCertValue, { color: '#0077b6', fontWeight: 'bold' }]}>
+                  Check Azul Sparks
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.bioCertDivider, { backgroundColor: isDarkMode ? '#00334e' : '#e0f2fe' }]} />
+            <View style={styles.bioCertRow}>
+              <Text style={[styles.bioCertLabel, { color: theme.colors.textMuted }]}>
+                Método seguro:
+              </Text>
+              <Text style={[styles.bioCertValue, { color: theme.colors.textPrimary }]}>
+                {user.verificationMethod || biometricType || 'Sensor Biométrico'}
+              </Text>
+            </View>
+            <View style={[styles.bioCertDivider, { backgroundColor: isDarkMode ? '#00334e' : '#e0f2fe' }]} />
+            <View style={styles.bioCertRow}>
+              <Text style={[styles.bioCertLabel, { color: theme.colors.textMuted }]}>
+                Estado:
+              </Text>
+              <Text style={[styles.bioCertValue, { color: '#2ec4b6', fontWeight: 'bold' }]}>
+                Auténtico y Protegido
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.bioReverifyBtn, { borderColor: theme.colors.border }]}
+            onPress={handlePerformBiometricVerification}
+          >
+            <Ionicons name="refresh" size={16} color={theme.colors.textSecondary} style={{ marginRight: 6 }} />
+            <Text style={[styles.bioReverifyText, { color: theme.colors.textSecondary }]}>
+              Re-verificar con {biometricType}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.bioPrimaryBtn, { backgroundColor: '#0077b6', marginTop: 12 }]}
+            onPress={() => setVerifyModalVisible(false)}
+          >
+            <Text style={styles.bioPrimaryBtnText}>Entendido</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (verifyState === 'success') {
+      return (
+        <View style={styles.bioContentContainer}>
+          <View style={styles.bioSuccessRingContainer}>
+            <View style={[styles.bioCertGlow, { backgroundColor: isDarkMode ? '#003820' : '#e8f5e9' }]}>
+              <Ionicons name="checkmark-circle" size={48} color="#2ec4b6" />
+            </View>
+          </View>
+
+          <Text style={[styles.bioSuccessTitle, { color: theme.colors.textPrimary }]}>
+            ¡Identidad Biométrica Certificada!
+          </Text>
+          <Text style={[styles.bioSuccessSub, { color: theme.colors.textSecondary }]}>
+            Tu {biometricType} ha sido verificado con éxito. Tu perfil ahora tiene la insignia de Verificada oficial.
+          </Text>
+
+          <View style={[styles.bioVerifiedPillBanner, { backgroundColor: isDarkMode ? '#002538' : '#e0f2fe' }]}>
+            <Ionicons name="checkmark-circle" size={20} color="#0077b6" style={{ marginRight: 8 }} />
+            <Text style={[styles.bioVerifiedPillText, { color: '#0077b6' }]}>
+              Check Azul de Confianza Activado
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.bioPrimaryBtn, { backgroundColor: '#0077b6', marginTop: 16 }]}
+            onPress={() => {
+              setVerifyState('idle');
+              setVerifyModalVisible(false);
+            }}
+          >
+            <Text style={styles.bioPrimaryBtnText}>Ver mi Perfil Verificado</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (verifyState === 'error') {
+      return (
+        <View style={styles.bioContentContainer}>
+          <View style={styles.bioSuccessRingContainer}>
+            <View style={[styles.bioCertGlow, { backgroundColor: isDarkMode ? '#380c16' : '#ffebee' }]}>
+              <Ionicons name="close-circle" size={46} color="#d90429" />
+            </View>
+          </View>
+
+          <Text style={[styles.bioSuccessTitle, { color: '#d90429' }]}>
+            Verificación No Completada
+          </Text>
+          <Text style={[styles.bioSuccessSub, { color: theme.colors.textSecondary }]}>
+            {verifyErrorMsg || 'El sensor biométrico no reconoció tu identidad o se canceló el escaneo.'}
+          </Text>
+
+          <View style={[styles.bioAlertBox, { backgroundColor: isDarkMode ? '#2b0711' : '#fff0f3', borderColor: '#d90429' }]}>
+            <Ionicons name="information-circle" size={18} color="#d90429" style={{ marginRight: 8 }} />
+            <Text style={[styles.bioAlertText, { color: theme.colors.textPrimary }]}>
+              Asegúrate de mirar a la cámara con buena luz o colocar firmemente tu huella en el sensor.
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.bioPrimaryBtn, { backgroundColor: '#0077b6', marginTop: 14 }]}
+            onPress={handlePerformBiometricVerification}
+          >
+            <Ionicons name="refresh" size={17} color="#ffffff" style={{ marginRight: 8 }} />
+            <Text style={styles.bioPrimaryBtnText}>Reintentar con {biometricType}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={{ marginTop: 12, paddingVertical: 6 }}
+            onPress={() => setVerifyModalVisible(false)}
+          >
+            <Text style={{ color: theme.colors.textMuted, fontSize: 13, fontWeight: '600' }}>
+              Cerrar
+            </Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (verifyState === 'no_hardware') {
+      return (
+        <View style={styles.bioContentContainer}>
+          <View style={styles.bioSuccessRingContainer}>
+            <View style={[styles.bioCertGlow, { backgroundColor: isDarkMode ? '#332600' : '#fffbeb' }]}>
+              <Ionicons name="hardware-chip-outline" size={42} color="#f59e0b" />
+            </View>
+          </View>
+
+          <Text style={[styles.bioSuccessTitle, { color: theme.colors.textPrimary }]}>
+            Biometría No Disponible
+          </Text>
+          <Text style={[styles.bioSuccessSub, { color: theme.colors.textSecondary }]}>
+            {verifyErrorMsg || 'Este dispositivo no tiene biometría configurada.'}
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.bioPrimaryBtn, { backgroundColor: '#0077b6', marginTop: 16 }]}
+            onPress={() => setVerifyModalVisible(false)}
+          >
+            <Text style={styles.bioPrimaryBtnText}>Entendido</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.bioContentContainer}>
+        <Text style={[styles.bioHeroSub, { color: theme.colors.textSecondary }]}>
+          Autenticación de identidad con la tecnología nativa de tu teléfono para garantizar que eres tú de verdad.
+        </Text>
+
+        {/* Radar biométrico visual con pulso */}
+        <View style={styles.bioRadarWrapper}>
+          <Animated.View
+            style={[
+              styles.bioRadarPulse,
+              {
+                transform: [{ scale: pulseAnim }],
+                borderColor: '#0077b6'
+              }
+            ]}
+          />
+          <View style={[styles.bioRadarCore, { backgroundColor: isDarkMode ? '#001e30' : '#e0f2fe', borderColor: '#0077b6' }]}>
+            <Ionicons
+              name={biometricType.includes('Huella') ? 'finger-print-outline' : 'scan-outline'}
+              size={46}
+              color="#0077b6"
+            />
+          </View>
+        </View>
+
+        <Text style={[styles.bioScannerLabel, { color: theme.colors.textPrimary }]}>
+          Sensor seguro: {biometricType}
+        </Text>
+
+        {/* 3 Garantías de Seguridad */}
+        <View style={[styles.bioPerksBox, { backgroundColor: isDarkMode ? '#001522' : '#f8fcff', borderColor: theme.colors.border }]}>
+          <View style={styles.bioPerkRow}>
+            <Ionicons name="lock-closed" size={17} color="#0077b6" style={{ marginRight: 10 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.bioPerkTitle, { color: theme.colors.textPrimary }]}>Privacidad en Enclave Seguro</Text>
+              <Text style={[styles.bioPerkDesc, { color: theme.colors.textMuted }]}>Tus datos biométricos nunca salen de tu teléfono ni se guardan en servidores.</Text>
+            </View>
+          </View>
+
+          <View style={[styles.bioPerkDivider, { backgroundColor: theme.colors.border }]} />
+
+          <View style={styles.bioPerkRow}>
+            <Ionicons name="checkmark-circle" size={17} color="#0077b6" style={{ marginRight: 10 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.bioPerkTitle, { color: theme.colors.textPrimary }]}>Insignia Oficial Verificada</Text>
+              <Text style={[styles.bioPerkDesc, { color: theme.colors.textMuted }]}>Consigue el Check Azul para generar confianza en tus quedadas y chats.</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Botón de Acción Principal */}
+        <TouchableOpacity
+          style={[styles.bioPrimaryBtn, { backgroundColor: '#0077b6' }]}
+          onPress={handlePerformBiometricVerification}
+          disabled={verifyState === 'authenticating'}
+        >
+          {verifyState === 'authenticating' ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ActivityIndicator color="#ffffff" style={{ marginRight: 10 }} />
+              <Text style={styles.bioPrimaryBtnText}>Comprobando {biometricType}...</Text>
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons
+                name={biometricType.includes('Huella') ? 'finger-print' : 'scan'}
+                size={19}
+                color="#ffffff"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.bioPrimaryBtnText}>
+                Verificar mi Rostro con {biometricType}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <Text style={[styles.bioFootnote, { color: theme.colors.textMuted }]}>
+          Solo se aprobará la verificación si el sensor biométrico valida tu identidad con éxito.
+        </Text>
+      </View>
+    );
+  };
 
   return (
     <ScrollView style={dynamicStyles.container} contentContainerStyle={styles.scrollContent}>
@@ -757,11 +1169,11 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
                 'Selecciona una opción:',
                 [
                   {
-                    text: 'Elegir de Galería 📸',
+                    text: 'Elegir de Galería',
                     onPress: handleDirectPickAvatar
                   },
                   {
-                    text: 'Foto por Defecto 🔄',
+                    text: 'Foto por Defecto',
                     onPress: handleDirectResetAvatar
                   },
                   { text: 'Cancelar', style: 'cancel' }
@@ -777,14 +1189,29 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
           <Text style={dynamicStyles.title}>
             {user?.name || 'Mi Perfil'}, <Text style={{ color: theme.colors.textSecondary, fontWeight: 'normal' }}>{user?.age || 25}</Text>
           </Text>
-          {user?.isVerified && (
-            <Ionicons name="checkmark-circle" size={20} color="#0077b6" style={{ marginLeft: 6 }} />
-          )}
+          {user?.isVerified ? (
+            <TouchableOpacity
+              style={styles.verifiedHeaderBadge}
+              onPress={handleOpenVerifyModal}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark-circle" size={18} color="#0077b6" />
+              <Text style={styles.verifiedHeaderText}>Verificada</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <Text style={[styles.pronounBadge, { backgroundColor: isDarkMode ? '#3d0c1e' : '#ffe5ec', color: theme.colors.primary }]}>
           {user?.pronouns || 'Ella / She'}
         </Text>
+        {user?.isAdmin && (
+          <View style={[styles.adminRoleBadge, { backgroundColor: isDarkMode ? '#2b1b00' : '#fef3c7', borderColor: '#f59e0b' }]}>
+            <Ionicons name="shield" size={13} color="#d97706" style={{ marginRight: 5 }} />
+            <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#d97706', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Administradora Oficial
+            </Text>
+          </View>
+        )}
         <Text style={[styles.profileEmail, { color: theme.colors.textMuted }]}>{user?.email}</Text>
 
         <View style={styles.headerButtonsRow}>
@@ -796,19 +1223,21 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
             <Text style={[styles.editProfileBtnText, { color: theme.colors.primary }]}>Editar Perfil & Tags</Text>
           </TouchableOpacity>
 
-          {!user?.isVerified && (
+          {user?.isVerified ? (
             <TouchableOpacity
-              style={styles.verifyBtn}
-              onPress={() => {
-                setCapturedSelfie(null);
-                setScanningState('idle');
-                setScanStep(0);
-                setBiometricMetrics(null);
-                setVerifyModalVisible(true);
-              }}
+              style={[styles.verifiedBadgeBtn, { backgroundColor: isDarkMode ? '#002538' : '#e0f2fe', borderColor: '#0077b6' }]}
+              onPress={handleOpenVerifyModal}
             >
-              <Ionicons name="shield-checkmark-outline" size={15} color="#0077b6" style={{ marginRight: 6 }} />
-              <Text style={styles.verifyBtnText}>Verificación Biométrica (468 Puntos)</Text>
+              <Ionicons name="shield-checkmark" size={15} color="#0077b6" style={{ marginRight: 6 }} />
+              <Text style={styles.verifiedBadgeBtnText}>Certificado Activo</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.verifyBtn, { backgroundColor: isDarkMode ? '#002538' : '#e0f2fe', borderColor: '#0077b6' }]}
+              onPress={handleOpenVerifyModal}
+            >
+              <Ionicons name="scan-outline" size={16} color="#0077b6" style={{ marginRight: 6 }} />
+              <Text style={styles.verifyBtnText}>Verificar con {biometricType}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -868,7 +1297,7 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
                 </Text>
               </View>
               <View style={styles.spotifyTag}>
-                <Text style={styles.spotifyTagText}>✓ Sincronizado</Text>
+                <Text style={styles.spotifyTagText}>Sincronizado</Text>
               </View>
             </View>
 
@@ -877,7 +1306,7 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.artistScroll}>
               {spotifyData.topArtists.map((artist, idx) => (
-                <View key={idx} style={styles.artistItem}>
+                <View key={artist.name || `${idx}`} style={styles.artistItem}>
                   <Image source={{ uri: artist.image }} style={styles.artistImage} />
                   <Text style={[styles.artistName, { color: theme.colors.textPrimary }]} numberOfLines={1}>
                     {artist.name}
@@ -914,78 +1343,7 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
           )}
         </View>
 
-        {!isSpotifyLinked ? (
-          <TouchableOpacity
-            style={[styles.anthemCard, { backgroundColor: isDarkMode ? '#0a2312' : '#f4fbf5', borderColor: isDarkMode ? '#1b4332' : '#d8f3dc', borderStyle: 'dashed' }]}
-            onPress={() => setAnthemModalVisible(true)}
-            activeOpacity={0.85}
-          >
-            <View style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: '#1db95420', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="musical-note" size={24} color="#1db954" />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.anthemTitle, { color: theme.colors.textPrimary, fontSize: 14 }]} numberOfLines={1}>
-                Conectar con Spotify
-              </Text>
-              <Text style={[styles.anthemArtist, { color: theme.colors.textMuted, fontSize: 12 }]} numberOfLines={2}>
-                Enlaza tu cuenta para elegir tu canción favorita del catálogo oficial.
-              </Text>
-            </View>
-            <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: '#1db954', flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="link-outline" size={13} color="#ffffff" style={{ marginRight: 4 }} />
-              <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#ffffff' }}>Enlazar</Text>
-            </View>
-          </TouchableOpacity>
-        ) : activeAnthem ? (
-          <TouchableOpacity
-            style={[styles.anthemCard, { backgroundColor: isDarkMode ? '#141d17' : '#f4fbf5', borderColor: isDarkMode ? '#1db95440' : '#b7e4c7' }]}
-            onPress={() => setAnthemModalVisible(true)}
-            activeOpacity={0.85}
-          >
-            <Image source={{ uri: activeAnthem.coverUrl }} style={styles.anthemCover} />
-            <View style={styles.anthemInfo}>
-              <Text style={[styles.anthemTitle, { color: theme.colors.textPrimary }]} numberOfLines={1}>
-                {activeAnthem.title}
-              </Text>
-              <Text style={[styles.anthemArtist, { color: theme.colors.textSecondary }]} numberOfLines={1}>
-                {activeAnthem.artist}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#1db954', alignItems: 'center', justifyContent: 'center', marginRight: 4 }}>
-                  <Ionicons name="musical-note" size={6} color="#000" />
-                </View>
-                <Text style={{ fontSize: 10, color: '#1db954', fontWeight: 'bold' }}>Spotify Track</Text>
-              </View>
-            </View>
-
-            <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: isDarkMode ? '#1b4332' : '#d8f3dc', flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="sparkles" size={13} color="#1db954" style={{ marginRight: 4 }} />
-              <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#1db954' }}>Top Song</Text>
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[styles.anthemCard, { backgroundColor: isDarkMode ? '#141d17' : '#f4fbf5', borderColor: isDarkMode ? '#1db95440' : '#b7e4c7', borderStyle: 'dashed' }]}
-            onPress={() => setAnthemModalVisible(true)}
-            activeOpacity={0.85}
-          >
-            <View style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: '#1db95420', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="search" size={24} color="#1db954" />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.anthemTitle, { color: theme.colors.textPrimary, fontSize: 14 }]} numberOfLines={1}>
-                Elige tu obsesión musical
-              </Text>
-              <Text style={[styles.anthemArtist, { color: theme.colors.textMuted, fontSize: 12 }]} numberOfLines={2}>
-                Toca para buscar y seleccionar tu canción favorita en Spotify.
-              </Text>
-            </View>
-            <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: '#1db954', flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="add" size={14} color="#ffffff" style={{ marginRight: 2 }} />
-              <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#ffffff' }}>Buscar</Text>
-            </View>
-          </TouchableOpacity>
-        )}
+        {renderAnthemSection()}
       </View>
 
       {/* Intención Actual */}
@@ -1004,7 +1362,7 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
         <Text style={dynamicStyles.sectionTitle}>Mis Intereses & Identidad</Text>
         <View style={styles.tagsContainer}>
           {(user?.tags || ['Femme', 'Música indie']).map((tag, idx) => (
-            <View key={idx} style={dynamicStyles.tagChip}>
+            <View key={tag || `${idx}`} style={dynamicStyles.tagChip}>
               <Text style={dynamicStyles.tagChipText}>{tag}</Text>
             </View>
           ))}
@@ -1077,6 +1435,38 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
         </View>
       </View>
 
+      {/* Apartado de Moderación & Administración (Solo Admin) */}
+      {(user?.isAdmin || user?.role === 'admin') && (
+        <View style={[dynamicStyles.card, { borderColor: theme.colors.primaryDark, borderWidth: 1.5 }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={[styles.safetyIconCircle, { backgroundColor: isDarkMode ? '#3b0c16' : '#ffe5ea' }]}>
+                <Ionicons name="shield-checkmark" size={18} color="#d90429" />
+              </View>
+              <Text style={[dynamicStyles.sectionTitle, { marginBottom: 0, marginLeft: 10, color: isDarkMode ? '#ff2a6d' : theme.colors.primaryDark }]}>
+                Panel de Moderación
+              </Text>
+            </View>
+            <View style={[styles.adminPillBadge, { backgroundColor: isDarkMode ? '#3d0c1e' : '#ffe5ec' }]}>
+              <Text style={[styles.adminPillBadgeText, { color: theme.colors.primary }]}>ADMIN</Text>
+            </View>
+          </View>
+          <Text style={[styles.safetyBtnSubtitle, { color: theme.colors.textMuted, marginBottom: 12 }]}>
+            Revisa reportes de la comunidad, inspecciona en vivo los chats denunciados y dictamina suspensiones.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.openAdminDashboardBtn, { backgroundColor: theme.colors.primaryDark }]}
+            onPress={() => setAdminModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="shield-sharp" size={17} color="#ffffff" style={{ marginRight: 8 }} />
+            <Text style={styles.openAdminDashboardBtnText}>Abrir Panel de Moderadora</Text>
+            <Ionicons name="arrow-forward" size={16} color="#ffffff" style={{ marginLeft: 6 }} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Seguridad & Comunidad */}
       <View style={dynamicStyles.card}>
         <Text style={dynamicStyles.sectionTitle}>Seguridad & Normas de la Comunidad</Text>
@@ -1127,16 +1517,46 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.safetyMenuBtn, { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border, marginBottom: 0 }]}
-          onPress={() => setLegalModalVisible(true)}
+          style={[styles.safetyMenuBtn, { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border }]}
+          onPress={() => openLegalModal('terms')}
           activeOpacity={0.8}
         >
           <View style={[styles.safetyIconCircle, { backgroundColor: isDarkMode ? '#1e1b2e' : '#f0f3ff' }]}>
             <Ionicons name="document-text-outline" size={17} color="#6366f1" />
           </View>
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={[styles.safetyBtnTitle, { color: theme.colors.textPrimary }]}>Términos (EULA) & Privacidad (RGPD)</Text>
-            <Text style={[styles.safetyBtnSubtitle, { color: theme.colors.textMuted }]}>Condiciones legales y protección de tus datos.</Text>
+            <Text style={[styles.safetyBtnTitle, { color: theme.colors.textPrimary }]}>Términos de Servicio (EULA)</Text>
+            <Text style={[styles.safetyBtnSubtitle, { color: theme.colors.textMuted }]}>Condiciones de uso, elegibilidad +18 y normas.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.safetyMenuBtn, { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border }]}
+          onPress={() => openLegalModal('privacy')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.safetyIconCircle, { backgroundColor: isDarkMode ? '#0d1f2d' : '#e6f7ff' }]}>
+            <Ionicons name="lock-closed-outline" size={17} color="#00b4d8" />
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={[styles.safetyBtnTitle, { color: theme.colors.textPrimary }]}>Política de Privacidad (RGPD)</Text>
+            <Text style={[styles.safetyBtnSubtitle, { color: theme.colors.textMuted }]}>Cómo protegemos y tratamos tus datos personales.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.safetyMenuBtn, { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border, marginBottom: 0 }]}
+          onPress={() => openLegalModal('safety')}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.safetyIconCircle, { backgroundColor: isDarkMode ? '#241a0e' : '#fffbeb' }]}>
+            <Ionicons name="heart-half-outline" size={17} color="#f59e0b" />
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={[styles.safetyBtnTitle, { color: theme.colors.textPrimary }]}>Seguridad en Citas (IRL)</Text>
+            <Text style={[styles.safetyBtnSubtitle, { color: theme.colors.textMuted }]}>Pautas esenciales para encuentros presenciales seguros.</Text>
           </View>
           <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
         </TouchableOpacity>
@@ -1465,76 +1885,7 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
 
                 <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
                   {/* Resultados de Búsqueda de Spotify API */}
-                  {spotifySearchResults.length > 0 ? (
-                    <>
-                      <Text style={[styles.searchResultsHeader, { color: theme.colors.textSecondary }]}>
-                        RESULTADOS EN SPOTIFY:
-                      </Text>
-                      {spotifySearchResults.map((track) => (
-                        <TouchableOpacity
-                          key={track.id}
-                          style={[
-                            styles.anthemChoiceItem,
-                            { backgroundColor: isDarkMode ? '#280814' : '#f8f9fa', borderColor: theme.colors.border }
-                          ]}
-                          onPress={async () => {
-                            const newAnthem = {
-                              id: track.id,
-                              title: track.title,
-                              artist: track.artist,
-                              coverUrl: track.coverUrl,
-                              album: track.album
-                            };
-                            setSelectedAnthem(newAnthem);
-                            setAnthemModalVisible(false);
-                            try {
-                              await apiRequest('/api/users/me', {
-                                method: 'PUT',
-                                body: JSON.stringify({ anthem: newAnthem })
-                              });
-                              onUpdateUser({ ...user, anthem: newAnthem });
-                            } catch (e) {}
-                          }}
-                        >
-                          <Image source={{ uri: track.coverUrl }} style={styles.anthemChoiceCover} />
-                          <View style={{ flex: 1, marginLeft: 12 }}>
-                            <Text style={[styles.anthemTitle, { color: theme.colors.textPrimary }]} numberOfLines={1}>
-                              {track.title}
-                            </Text>
-                            <Text style={[styles.anthemArtist, { color: theme.colors.textSecondary }]} numberOfLines={1}>
-                              {track.artist}
-                            </Text>
-                            {track.album ? (
-                              <Text style={{ fontSize: 10, color: theme.colors.textMuted, marginTop: 2 }} numberOfLines={1}>
-                                {track.album}
-                              </Text>
-                            ) : null}
-                          </View>
-                          <View style={styles.selectGreenPill}>
-                            <Text style={styles.selectGreenPillText}>Elegir</Text>
-                          </View>
-                        </TouchableOpacity>
-                      ))}
-                    </>
-                  ) : spotifySearchQuery.trim() ? (
-                    <View style={{ alignItems: 'center', paddingVertical: 36, paddingHorizontal: 20 }}>
-                      <Text style={{ fontSize: 14, color: theme.colors.textMuted, textAlign: 'center' }}>
-                        No se encontraron canciones en Spotify para "{spotifySearchQuery}".
-                      </Text>
-                    </View>
-                  ) : (
-                    <View style={{ alignItems: 'center', paddingVertical: 40, paddingHorizontal: 24 }}>
-                      <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: '#1db95415', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-                        <Ionicons name="search" size={26} color="#1db954" />
-                      </View>
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.textPrimary, textAlign: 'center', marginBottom: 6 }}>
-                        Escribe el nombre de una canción
-                      </Text>
-                      <Text style={{ fontSize: 12, color: theme.colors.textSecondary, textAlign: 'center', lineHeight: 18 }}>
-                        Busca por título o artista para encontrar tu obsesión musical en Spotify y destacarla en tu perfil.
-                      </Text>
-                    </View>
-                  )}
+                  {renderSpotifySearchResults()}
                 </ScrollView>
               </>
             )}
@@ -1542,7 +1893,7 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
         </View>
       </Modal>
 
-      {/* Modal de Malla Facial Biométrica 468 Nodos */}
+      {/* ================= MODAL DE VERIFICACIÓN BIOMÉTRICA REAL ================= */}
       <Modal
         visible={verifyModalVisible}
         transparent
@@ -1550,207 +1901,40 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
         onRequestClose={() => setVerifyModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.verifyCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <View style={styles.verifyHeaderRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons name="scan" size={22} color="#0077b6" style={{ marginRight: 8 }} />
-                <Text style={[styles.verifyTitle, { color: theme.colors.textPrimary }]}>
-                  Malla Facial Biométrica (468 Nodos)
+          <View
+            style={[
+              styles.bioModalCard,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border
+              }
+            ]}
+          >
+            {/* Cabecera del Modal */}
+            <View style={styles.bioModalHeader}>
+              <View style={styles.bioModalTitleGroup}>
+                <View
+                  style={[
+                    styles.bioIconBadge,
+                    { backgroundColor: isDarkMode ? '#002538' : '#e0f2fe' }
+                  ]}
+                >
+                  <Ionicons name="shield-checkmark" size={18} color="#0077b6" />
+                </View>
+                <Text style={[styles.bioModalTitle, { color: theme.colors.textPrimary }]}>
+                  Verificación de Identidad
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setVerifyModalVisible(false)}>
-                <Ionicons name="close" size={20} color={theme.colors.textMuted} />
+              <TouchableOpacity
+                onPress={() => setVerifyModalVisible(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={22} color={theme.colors.textMuted} />
               </TouchableOpacity>
             </View>
 
-            {!capturedSelfie ? (
-              <>
-                <Text style={[styles.verifySubtitle, { color: theme.colors.textSecondary }]}>
-                  Mapeo tridimensional de topología facial para verificar la correspondencia exacta de rasgos óseos y descartar perfiles falsos.
-                </Text>
-
-                <View style={[styles.meshDemoBox, { backgroundColor: isDarkMode ? '#051923' : '#f0f9ff', borderColor: '#0077b6' }]}>
-                  <View style={styles.meshNodeGrid}>
-                    <View style={styles.meshNodeRow}>
-                      <View style={styles.meshDot} /><View style={styles.meshDot} /><View style={styles.meshDot} /><View style={styles.meshDot} />
-                    </View>
-                    <View style={styles.meshNodeRow}>
-                      <View style={styles.meshDot} /><View style={[styles.meshDot, styles.meshDotActive]} /><View style={[styles.meshDot, styles.meshDotActive]} /><View style={styles.meshDot} />
-                    </View>
-                    <View style={styles.meshNodeRow}>
-                      <View style={styles.meshDot} /><View style={styles.meshDot} /><View style={styles.meshDot} /><View style={styles.meshDot} />
-                    </View>
-                  </View>
-                  <Text style={[styles.meshDemoText, { color: theme.colors.textPrimary }]}>
-                    468 Coordenadas 3D • Mapeo Periorbital & Mandibular
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.verifyActionBtn, { backgroundColor: '#0077b6', marginBottom: 10 }]}
-                  onPress={handleLaunchCamera}
-                >
-                  <Ionicons name="camera" size={19} color="#ffffff" style={{ marginRight: 8 }} />
-                  <Text style={styles.verifyActionBtnText}>Escanear Malla Facial con Cámara</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.galleryFallbackBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceSubtle }]}
-                  onPress={handleLaunchGallery}
-                >
-                  <Ionicons name="images-outline" size={17} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
-                  <Text style={[styles.galleryFallbackText, { color: theme.colors.textSecondary }]}>
-                    Seleccionar Foto desde Galería
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <View style={styles.comparisonContainer}>
-                  <View style={styles.comparisonBox}>
-                    <Text style={[styles.comparisonLabel, { color: theme.colors.textMuted }]}>Foto Perfil</Text>
-                    <View style={styles.imageFrame}>
-                      <Image source={{ uri: user?.avatarUrl || avatarUrl }} style={styles.comparisonImg} />
-                      <View style={styles.hudOverlay}>
-                        <View style={styles.hudCrosshair} />
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.vsBadge}>
-                    <Ionicons
-                      name="scan"
-                      size={24}
-                      color={scanningState === 'matched' ? '#2ec4b6' : scanningState === 'mismatch' ? '#d90429' : '#0077b6'}
-                    />
-                  </View>
-
-                  <View style={styles.comparisonBox}>
-                    <Text style={[styles.comparisonLabel, { color: theme.colors.textMuted }]}>Selfie 468 Puntos</Text>
-                    <View style={[styles.imageFrame, scanningState === 'mismatch' && { borderColor: '#d90429' }]}>
-                      <Image source={{ uri: capturedSelfie }} style={styles.comparisonImg} />
-                      {scanningState === 'scanning' && (
-                        <Animated.View
-                          style={[
-                            styles.scanLine,
-                            {
-                              transform: [{ translateY: scanTranslateY }]
-                            }
-                          ]}
-                        />
-                      )}
-                      <View style={styles.hudOverlay}>
-                        <View style={[styles.hudCrosshair, scanningState === 'mismatch' && { borderColor: '#d90429' }]} />
-                      </View>
-                    </View>
-                    <View style={[styles.checkMiniBadge, { backgroundColor: scanningState === 'matched' ? '#2ec4b6' : scanningState === 'mismatch' ? '#d90429' : '#0077b6' }]}>
-                      <Ionicons
-                        name={scanningState === 'matched' ? 'checkmark' : scanningState === 'mismatch' ? 'close' : 'scan'}
-                        size={11}
-                        color="#ffffff"
-                      />
-                    </View>
-                  </View>
-                </View>
-
-                {scanningState === 'scanning' ? (
-                  <View style={[styles.scanningBox, { backgroundColor: isDarkMode ? '#051923' : '#f0f9ff' }]}>
-                    <View style={styles.scanCheckRow}>
-                      <Ionicons name={scanStep >= 1 ? 'checkmark-circle' : 'ellipse-outline'} size={16} color="#0077b6" style={{ marginRight: 6 }} />
-                      <Text style={[styles.scanStepText, { color: theme.colors.textPrimary }]}>Mapeo de 468 nodos de topología facial 3D</Text>
-                    </View>
-                    <View style={styles.scanCheckRow}>
-                      <Ionicons name={scanStep >= 2 ? 'checkmark-circle' : 'ellipse-outline'} size={16} color="#0077b6" style={{ marginRight: 6 }} />
-                      <Text style={[styles.scanStepText, { color: theme.colors.textPrimary }]}>Análisis morfométrico (ojos, puente nasal, mandíbula)</Text>
-                    </View>
-                    <View style={styles.scanCheckRow}>
-                      <Ionicons name={scanStep >= 3 ? 'checkmark-circle' : 'ellipse-outline'} size={16} color="#0077b6" style={{ marginRight: 6 }} />
-                      <Text style={[styles.scanStepText, { color: theme.colors.textPrimary }]}>Cálculo de distancia euclidiana de vectores faciales</Text>
-                    </View>
-                  </View>
-                ) : scanningState === 'matched' ? (
-                  <View style={styles.matchSuccessBox}>
-                    <View style={[styles.scoreBadge, { backgroundColor: '#e0f2fe', borderColor: '#0077b6' }]}>
-                      <Ionicons name="checkmark-circle" size={20} color="#0077b6" style={{ marginRight: 6 }} />
-                      <Text style={styles.scoreText}>Coincidencia Malla: {matchScore}% (VÁLIDO)</Text>
-                    </View>
-                    <Text style={[styles.matchSubtext, { color: theme.colors.textSecondary }]}>
-                      {biometricReason || 'Topología facial 100% concordante con el perfil registrado.'}
-                    </Text>
-
-                    {biometricMetrics && (
-                      <View style={[styles.telemetryCard, { backgroundColor: isDarkMode ? '#0d2818' : '#e8f5e9' }]}>
-                        <Text style={styles.telemetryTitle}>MÉTRICAS 3D VALIDADAS:</Text>
-                        <Text style={styles.telemetryItem}>• Nodos Mapeados: {biometricMetrics.meshNodesCount} puntos</Text>
-                        <Text style={styles.telemetryItem}>• Simetría Ocular: {biometricMetrics.eyeDistanceRatio}</Text>
-                        <Text style={styles.telemetryItem}>• Tolerancia Mandibular: {biometricMetrics.jawAngleDisparity}</Text>
-                        <Text style={styles.telemetryItem}>• Clasificación: {biometricMetrics.morphologyType}</Text>
-                      </View>
-                    )}
-
-                    <TouchableOpacity
-                      style={[styles.verifyActionBtn, { backgroundColor: '#0077b6', marginTop: 10 }]}
-                      onPress={handleConfirmVerification}
-                      disabled={verifying}
-                    >
-                      {verifying ? (
-                        <ActivityIndicator color="#fff" />
-                      ) : (
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <Ionicons name="shield-checkmark" size={18} color="#ffffff" style={{ marginRight: 8 }} />
-                          <Text style={styles.verifyActionBtnText}>Aprobar y Conceder Check Azul</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.matchSuccessBox}>
-                    <View style={[styles.scoreBadge, { backgroundColor: '#ffe3e8', borderColor: '#d90429' }]}>
-                      <Ionicons name="close-circle" size={20} color="#d90429" style={{ marginRight: 6 }} />
-                      <Text style={[styles.scoreText, { color: '#d90429' }]}>Coincidencia Malla: {matchScore}% (DENEGADO)</Text>
-                    </View>
-                    <Text style={[styles.matchSubtext, { color: '#d90429', fontWeight: 'bold' }]}>
-                      {biometricReason}
-                    </Text>
-
-                    {biometricMetrics && (
-                      <View style={[styles.telemetryCard, { backgroundColor: isDarkMode ? '#300808' : '#ffebee' }]}>
-                        <Text style={[styles.telemetryTitle, { color: '#d90429' }]}>DIAGNÓSTICO DE DISPARIDAD:</Text>
-                        <Text style={[styles.telemetryItem, { color: isDarkMode ? '#ffccd5' : '#5c0000' }]}>• Proporción Ocular: {biometricMetrics.eyeDistanceRatio}</Text>
-                        <Text style={[styles.telemetryItem, { color: isDarkMode ? '#ffccd5' : '#5c0000' }]}>• Ángulo Mandibular: {biometricMetrics.jawAngleDisparity}</Text>
-                        <Text style={[styles.telemetryItem, { color: isDarkMode ? '#ffccd5' : '#5c0000' }]}>• Diagnóstico: {biometricMetrics.morphologyType}</Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-
-                <View style={styles.testBarContainer}>
-                  <Text style={[styles.testBarTitle, { color: theme.colors.textMuted }]}>HERRAMIENTAS DE PRUEBA (MODO TEST):</Text>
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-                    <TouchableOpacity
-                      style={[styles.testBtn, { backgroundColor: '#2ec4b6' }]}
-                      onPress={() => processMeshScan(capturedSelfie, 'match')}
-                    >
-                      <Text style={styles.testBtnText}>✓ Probar Match Malla (97%)</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.testBtn, { backgroundColor: '#d90429' }]}
-                      onPress={() => processMeshScan(capturedSelfie, 'mismatch')}
-                    >
-                      <Text style={styles.testBtnText}>✕ Probar Incompatibilidad (14%)</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.retakeBtn, { borderColor: theme.colors.border }]}
-                  onPress={handleLaunchCamera}
-                >
-                  <Ionicons name="refresh" size={15} color={theme.colors.textSecondary} style={{ marginRight: 6 }} />
-                  <Text style={[styles.retakeBtnText, { color: theme.colors.textSecondary }]}>Tomar Otro Selfie</Text>
-                </TouchableOpacity>
-              </>
-            )}
+            {/* Cuerpo del Modal Biométrico según Estado */}
+            {renderBiometricModalBody()}
           </View>
         </View>
       </Modal>
@@ -1772,7 +1956,13 @@ export default function ProfileScreen({ user, onUpdateUser, onLogout }) {
 
       <LegalTermsModal
         visible={legalModalVisible}
+        initialTab={legalModalTab}
         onClose={() => setLegalModalVisible(false)}
+      />
+
+      <AdminModerationScreen
+        visible={adminModalVisible}
+        onClose={() => setAdminModalVisible(false)}
       />
     </ScrollView>
   );
@@ -1790,6 +1980,32 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     marginBottom: 10
+  },
+  adminPillBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8
+  },
+  adminPillBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold'
+  },
+  openAdminDashboardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 16,
+    shadowColor: '#ff2a6d',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3
+  },
+  openAdminDashboardBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold'
   },
   safetyIconCircle: {
     width: 34,
@@ -1832,6 +2048,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center'
   },
+  verifiedHeaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0077b618',
+    borderColor: '#0077b655',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    marginLeft: 8
+  },
+  verifiedHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0077b6',
+    marginLeft: 3
+  },
   pronounBadge: {
     fontSize: 12,
     fontWeight: 'bold',
@@ -1839,6 +2072,15 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 10,
     marginTop: 4
+  },
+  adminRoleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 6
   },
   profileEmail: {
     fontSize: 13,
@@ -1863,15 +2105,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 13
   },
-  verifyBtn: {
+  verifiedBadgeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#caf0f8',
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#0077b6'
+    borderWidth: 1.5
+  },
+  verifiedBadgeBtnText: {
+    color: '#0077b6',
+    fontWeight: '700',
+    fontSize: 13
+  },
+  verifyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1
   },
   verifyBtnText: {
     color: '#0077b6',
@@ -2262,258 +2515,229 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600'
   },
-  verifyCard: {
-    borderRadius: 26,
+  // Estilos de Verificación Biométrica Real (Apple / Android Native)
+  bioModalCard: {
+    borderRadius: 28,
     padding: 22,
     borderWidth: 1,
+    width: '94%',
+    maxWidth: 420,
     alignItems: 'center'
   },
-  verifyHeaderRow: {
+  bioModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
-    marginBottom: 8
+    marginBottom: 16
   },
-  verifyTitle: {
-    fontSize: 16,
+  bioModalTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  bioIconBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10
+  },
+  bioModalTitle: {
+    fontSize: 17,
     fontWeight: 'bold'
   },
-  verifySubtitle: {
+  bioContentContainer: {
+    width: '100%',
+    alignItems: 'center'
+  },
+  bioHeroSub: {
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
-    marginBottom: 16
+    marginBottom: 18,
+    paddingHorizontal: 8
   },
-  meshDemoBox: {
-    borderWidth: 1.5,
-    borderRadius: 20,
-    padding: 16,
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 16
-  },
-  meshNodeGrid: {
-    alignItems: 'center',
-    marginBottom: 10
-  },
-  meshNodeRow: {
-    flexDirection: 'row',
-    marginVertical: 3
-  },
-  meshDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#0077b6',
-    marginHorizontal: 6,
-    opacity: 0.5
-  },
-  meshDotActive: {
-    backgroundColor: '#2ec4b6',
-    opacity: 1,
-    transform: [{ scale: 1.3 }]
-  },
-  meshDemoText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textAlign: 'center'
-  },
-  galleryFallbackBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  bioRadarWrapper: {
+    width: 130,
+    height: 130,
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 22,
-    borderWidth: 1,
-    width: '100%'
-  },
-  galleryFallbackText: {
-    fontSize: 13,
-    fontWeight: '600'
-  },
-  comparisonContainer: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginVertical: 12
-  },
-  comparisonBox: {
-    alignItems: 'center',
-    width: '44%',
+    marginVertical: 12,
     position: 'relative'
   },
-  comparisonLabel: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    marginBottom: 6,
-    textTransform: 'uppercase'
-  },
-  imageFrame: {
-    width: 105,
-    height: 105,
-    borderRadius: 18,
+  bioRadarPulse: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     borderWidth: 2,
-    borderColor: '#0077b6',
-    overflow: 'hidden',
-    position: 'relative',
+    opacity: 0.45
+  },
+  bioRadarCore: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center'
   },
-  comparisonImg: {
+  bioScannerLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 4,
+    marginBottom: 16
+  },
+  bioPerksBox: {
     width: '100%',
-    height: '100%'
-  },
-  hudOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,119,182,0.15)'
-  },
-  hudCrosshair: {
-    width: 50,
-    height: 50,
-    borderWidth: 1,
-    borderColor: '#00b4d8',
-    borderRadius: 10,
-    borderStyle: 'dashed'
-  },
-  scanLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 3,
-    backgroundColor: '#00b4d8',
-    shadowColor: '#00b4d8',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 6,
-    elevation: 4
-  },
-  checkMiniBadge: {
-    position: 'absolute',
-    bottom: -6,
-    right: 14,
-    backgroundColor: '#0077b6',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  vsBadge: {
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  scanningBox: {
-    width: '100%',
-    padding: 12,
-    borderRadius: 14,
-    marginVertical: 10
-  },
-  scanCheckRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 4
-  },
-  scanStepText: {
-    fontSize: 12,
-    fontWeight: '500'
-  },
-  matchSuccessBox: {
-    alignItems: 'center',
-    width: '100%',
-    marginVertical: 8
-  },
-  scoreBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 6
+    padding: 14,
+    marginBottom: 18
   },
-  scoreText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#0077b6'
-  },
-  matchSubtext: {
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 16,
-    marginBottom: 10
-  },
-  telemetryCard: {
-    width: '100%',
-    padding: 10,
-    borderRadius: 12,
-    marginVertical: 6
-  },
-  telemetryTitle: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    color: '#2d6a4f',
-    marginBottom: 4
-  },
-  telemetryItem: {
-    fontSize: 11,
-    color: '#1b4332',
-    marginVertical: 1
-  },
-  testBarContainer: {
-    width: '100%',
-    marginTop: 8,
-    marginBottom: 4,
-    alignItems: 'center'
-  },
-  testBarTitle: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    letterSpacing: 0.5
-  },
-  testBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12
-  },
-  testBtnText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: 'bold'
-  },
-  retakeBtn: {
+  bioPerkRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 15,
-    borderWidth: 1,
-    marginTop: 10
+    alignItems: 'flex-start'
   },
-  retakeBtnText: {
-    fontSize: 12,
-    fontWeight: '600'
+  bioPerkTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2
   },
-  verifyActionBtn: {
+  bioPerkDesc: {
+    fontSize: 11,
+    lineHeight: 15
+  },
+  bioPerkDivider: {
+    height: 1,
+    width: '100%',
+    marginVertical: 10
+  },
+  bioPrimaryBtn: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 13,
-    paddingHorizontal: 22,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
     borderRadius: 25,
     width: '100%'
   },
-  verifyActionBtnText: {
+  bioPrimaryBtnText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 'bold'
+  },
+  bioFootnote: {
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 12,
+    lineHeight: 15,
+    paddingHorizontal: 12
+  },
+  bioSuccessRingContainer: {
+    marginVertical: 14,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  bioCertGlow: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  bioCertMiniBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: '#0077b6',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#ffffff'
+  },
+  bioSuccessTitle: {
+    fontSize: 19,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 8
+  },
+  bioSuccessSub: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+    paddingHorizontal: 10
+  },
+  bioCertCard: {
+    width: '100%',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    padding: 14,
+    marginBottom: 14
+  },
+  bioCertRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6
+  },
+  bioCertLabel: {
+    fontSize: 13,
+    fontWeight: '600'
+  },
+  bioCertValue: {
+    fontSize: 13
+  },
+  bioCertDivider: {
+    height: 1,
+    width: '100%'
+  },
+  bioReverifyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    width: '100%'
+  },
+  bioReverifyText: {
+    fontSize: 13,
+    fontWeight: '600'
+  },
+  bioVerifiedPillBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    width: '100%',
+    marginBottom: 8
+  },
+  bioVerifiedPillText: {
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  bioAlertBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    width: '100%',
+    marginBottom: 10
+  },
+  bioAlertText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16
   },
 
   // Estilos de la Pestaña Oficial Spotify OAuth

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, Platform } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Platform } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeProvider, useTheme } from './src/theme';
@@ -8,6 +9,7 @@ import ExploreScreen from './src/screens/ExploreScreen';
 import PlansScreen from './src/screens/PlansScreen';
 import ChatsScreen from './src/screens/ChatsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import AdminModerationScreen from './src/screens/AdminModerationScreen';
 import { setAuthToken } from './src/api';
 
 function MainApp() {
@@ -15,6 +17,7 @@ function MainApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('explore');
   const [activeChatParam, setActiveChatParam] = useState(null);
+  const [adminModalVisible, setAdminModalVisible] = useState(false);
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
@@ -70,6 +73,16 @@ function MainApp() {
         </View>
 
         <View style={styles.headerRight}>
+          {(currentUser.isAdmin || currentUser.role === 'admin') && (
+            <TouchableOpacity
+              style={styles.headerAdminPill}
+              onPress={() => setAdminModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="shield-checkmark" size={13} color="#ffffff" style={{ marginRight: 4 }} />
+              <Text style={styles.headerAdminText}>Admin</Text>
+            </TouchableOpacity>
+          )}
           <Text style={[styles.headerGreeting, { color: isDarkMode ? '#ffb3c1' : '#ffe5ec' }]}>
             Hola, {currentUser.name}
           </Text>
@@ -196,15 +209,25 @@ function MainApp() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Modal de Moderación / Administración */}
+      {(currentUser.isAdmin || currentUser.role === 'admin') && (
+        <AdminModerationScreen
+          visible={adminModalVisible}
+          onClose={() => setAdminModalVisible(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <MainApp />
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <MainApp />
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
 
@@ -238,6 +261,22 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center'
+  },
+  headerAdminPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.35)'
+  },
+  headerAdminText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700'
   },
   headerGreeting: {
     fontSize: 14,

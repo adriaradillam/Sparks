@@ -15,8 +15,30 @@ import {
   blockUserController,
   unblockUserController,
   getBlockedUsersController,
-  reportUserController
+  reportUserController,
+  getAdminReportsController,
+  getAdminReportChatController,
+  adminActionReportController,
+  adminGetStatsController,
+  adminGetBannedUsersController,
+  adminBanUserController,
+  adminUnbanUserController
 } from './controllers/safetyController';
+import {
+  adminQuickLoginController,
+  adminGetOverviewStatsController,
+  adminGetUsersController,
+  adminGetUserDetailsController,
+  adminUpdateUserRoleController,
+  adminVerifyUserController,
+  adminWarnUserController,
+  adminDeleteUserController,
+  adminGetPlansController,
+  adminDeletePlanController,
+  adminGetAnnouncementsController,
+  adminCreateAnnouncementController,
+  adminDeleteAnnouncementController
+} from './controllers/adminController';
 import { uploadMiddleware, uploadPhotoHandler } from './controllers/uploadController';
 import {
   searchSpotifyTracks,
@@ -36,7 +58,14 @@ import {
   getIcebreakers,
   viewEphemeralMessage
 } from './controllers/chatController';
-import { getPlans, createPlan, toggleJoinPlan } from './controllers/planController';
+import {
+  getPlans,
+  createPlan,
+  toggleJoinPlan,
+  getPlanChat,
+  sendPlanMessage,
+  updatePlan
+} from './controllers/planController';
 import { authenticateToken } from './middleware/auth';
 
 const router = express.Router();
@@ -84,6 +113,28 @@ router.post('/users/:id/block', authenticateToken, blockUserController);
 router.delete('/users/:id/unblock', authenticateToken, unblockUserController);
 router.post('/users/:id/report', authenticateToken, reportUserController);
 
+// ==================== RUTAS DE PANEL DE ADMINISTRACIÓN / MODERACIÓN ====================
+router.post('/admin/quick-login', adminQuickLoginController);
+router.get('/admin/overview', authenticateToken, adminGetOverviewStatsController);
+router.get('/admin/stats', authenticateToken, adminGetStatsController);
+router.get('/admin/users', authenticateToken, adminGetUsersController);
+router.get('/admin/users/:id', authenticateToken, adminGetUserDetailsController);
+router.put('/admin/users/:id/role', authenticateToken, adminUpdateUserRoleController);
+router.put('/admin/users/:id/verify', authenticateToken, adminVerifyUserController);
+router.post('/admin/users/:id/warn', authenticateToken, adminWarnUserController);
+router.delete('/admin/users/:id', authenticateToken, adminDeleteUserController);
+router.get('/admin/reports', authenticateToken, getAdminReportsController);
+router.get('/admin/reports/:id/chat', authenticateToken, getAdminReportChatController);
+router.post('/admin/reports/:id/action', authenticateToken, adminActionReportController);
+router.get('/admin/users/banned', authenticateToken, adminGetBannedUsersController);
+router.post('/admin/users/:id/ban', authenticateToken, adminBanUserController);
+router.post('/admin/users/:id/unban', authenticateToken, adminUnbanUserController);
+router.get('/admin/plans', authenticateToken, adminGetPlansController);
+router.delete('/admin/plans/:id', authenticateToken, adminDeletePlanController);
+router.get('/admin/announcements', authenticateToken, adminGetAnnouncementsController);
+router.post('/admin/announcements', authenticateToken, adminCreateAnnouncementController);
+router.delete('/admin/announcements/:id', authenticateToken, adminDeleteAnnouncementController);
+
 // ==================== RUTAS DE CHAT Y MENSAJERÍA ====================
 router.get('/chats/icebreakers', getIcebreakers);
 router.get('/chats', authenticateToken, getConversations);
@@ -95,7 +146,10 @@ router.post('/chats/:conversationId/messages/:messageId/view', authenticateToken
 // ==================== RUTAS DE PLANES Y EVENTOS ====================
 router.get('/plans', authenticateToken, getPlans);
 router.post('/plans', authenticateToken, createPlan);
+router.put('/plans/:id', authenticateToken, updatePlan);
 router.post('/plans/:id/join', authenticateToken, toggleJoinPlan);
+router.get('/plans/:id/chat', authenticateToken, getPlanChat);
+router.post('/plans/:id/chat/messages', authenticateToken, sendPlanMessage);
 
 // ==================== RUTAS DE SUBIDA MULTIMEDIA ====================
 router.post('/upload/photo', uploadMiddleware.single('photo'), uploadPhotoHandler);

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Política de Privacidad (RGPD) — Sparks</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0a060e;
+      --surface-card: #140d1c;
+      --surface-elevated: #1e1329;
+      --flame-pink: #ff2a6d;
+      --flame-gradient: linear-gradient(135deg, #ff2a6d 0%, #9b5de5 100%);
+      --text-main: #f8f6fc;
+      --text-muted: #a69bb5;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --accent-cyan: #00f2fe;
+      --accent-green: #10b981;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.7;
+      padding: 0;
+      margin: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    header {
+      background: rgba(20, 13, 28, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 16px 24px;
+    }
+
+    .header-inner {
+      max-width: 960px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: #fff;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 1.3rem;
+      letter-spacing: -0.5px;
+    }
+
+    .brand-flame {
+      width: 28px;
+      height: 28px;
+      background: var(--flame-gradient);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 20px;
+    }
+
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover, .nav-links a.active {
+      color: var(--flame-pink);
+    }
+
+    .hero {
+      padding: 60px 24px 40px;
+      text-align: center;
+      background: radial-gradient(circle at 50% -20%, rgba(0, 242, 254, 0.15) 0%, rgba(10, 6, 14, 0) 70%);
+    }
+
+    .badge-pill {
+      display: inline-block;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(0, 242, 254, 0.12);
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      color: var(--accent-cyan);
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 2.5rem;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 12px;
+      color: #fff;
+    }
+
+    .hero-meta {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .main-container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    .summary-card {
+      background: var(--surface-card);
+      border: 1px solid rgba(0, 242, 254, 0.25);
+      border-radius: 18px;
+      padding: 28px;
+      margin-bottom: 40px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+
+    .summary-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .summary-item {
+      background: var(--surface-elevated);
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .summary-item strong {
+      display: block;
+      color: var(--text-main);
+      margin-bottom: 6px;
+      font-size: 0.95rem;
+    }
+
+    .summary-item p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .content-section {
+      background: var(--surface-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 32px;
+      margin-bottom: 24px;
+    }
+
+    h2 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+      margin: 20px 0 10px;
+    }
+
+    p {
+      margin-bottom: 16px;
+      color: #ddd3e6;
+      font-size: 0.98rem;
+    }
+
+    ul, ol {
+      margin-bottom: 18px;
+      padding-left: 24px;
+      color: #ddd3e6;
+    }
+
+    li {
+      margin-bottom: 8px;
+      font-size: 0.95rem;
+    }
+
+    .privacy-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 0.9rem;
+    }
+
+    .privacy-table th, .privacy-table td {
+      border: 1px solid var(--border-subtle);
+      padding: 12px 16px;
+      text-align: left;
+    }
+
+    .privacy-table th {
+      background: var(--surface-elevated);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .highlight-box {
+      background: rgba(16, 185, 129, 0.08);
+      border-left: 4px solid var(--accent-green);
+      padding: 16px;
+      border-radius: 0 12px 12px 0;
+      margin: 20px 0;
+      font-size: 0.92rem;
+      color: #a7f3d0;
+    }
+
+    .contact-footer {
+      text-align: center;
+      padding: 40px 24px;
+      border-top: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .contact-footer a {
+      color: var(--accent-cyan);
+      text-decoration: none;
+    }
+
+    @media (max-width: 768px) {
+      h1 { font-size: 1.9rem; }
+      .content-section { padding: 22px; }
+      .summary-card { padding: 20px; }
+      .privacy-table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-inner">
+      <a href="/" class="brand">
+        <div class="brand-flame">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C10.5 4 8.5 6.5 8.5 9c0 1.9.9 3.5 2.2 4.4-.1-.8-.1-1.6.1-2.4 1.5 2.5 3.7 4 3.7 7 0 2.8-2.2 5-5 5-3.3 0-6-2.7-6-6 0-3.6 2.5-6.6 4.5-9.3C6.7 8.5 5 11 5 14c0 3.9 3.1 7 7 7s7-3.1 7-7c0-4.5-4-8.5-7-12z"/></svg>
+        </div>
+        Sparks Legal
+      </a>
+      <nav class="nav-links">
+        <a href="/legal/terms">Términos (EULA)</a>
+        <a href="/legal/privacy" class="active">Privacidad (RGPD)</a>
+        <a href="/admin">Panel Admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <span class="badge-pill">Protección de Datos RGPD & LOPDGDD</span>
+    <h1>Política de Privacidad</h1>
+    <p class="hero-meta">Versión 2.4.0 • Última actualización: 8 de septiembre de 2026</p>
+  </section>
+
+  <main class="main-container">
+
+    <div class="summary-card">
+      <div class="summary-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Tus Datos, Tus Reglas
+      </div>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <strong>No vendemos tus datos</strong>
+          <p>Jamás comercializamos tu información personal ni tu orientación con anunciantes o corredores de datos.</p>
+        </div>
+        <div class="summary-item">
+          <strong>Ubicación aproximada</strong>
+          <p>Puedes activar en 1 clic el modo &lt; 5 km para evitar que se calcule tu ubicación exacta en metros.</p>
+        </div>
+        <div class="summary-item">
+          <strong>Fotos efímeras seguras</strong>
+          <p>Las imágenes de visualización única en el chat se autodestruyen y se purgan del servidor tras abrirse.</p>
+        </div>
+        <div class="summary-item">
+          <strong>Derecho al olvido total</strong>
+          <p>Al pulsar Eliminar Cuenta en Ajustes, borramos tus datos de forma irreversible de nuestras bases de datos.</p>
+        </div>
+      </div>
+    </div>
+
+    <section class="content-section">
+      <h2>1. Responsable del Tratamiento y Contacto DPO</h2>
+      <p>El responsable del tratamiento de tus datos es <strong>Sparks App S.L.</strong> / <strong>Sparks Community Inc.</strong> con domicilio social en Paseo de la Castellana 95, Madrid, España.</p>
+      <p>Disponemos de una Delegada de Protección de Datos (DPO) a quien puedes dirigir cualquier solicitud o consulta sobre el tratamiento de tu información personal a través de <strong><a href="mailto:dpo@sparks.app" style="color:var(--accent-cyan);">dpo@sparks.app</a></strong> o <strong><a href="mailto:privacidad@sparks.app" style="color:var(--accent-cyan);">privacidad@sparks.app</a></strong>.</p>
+    </section>
+
+    <section class="content-section">
+      <h2>2. Datos que Recopilamos y Base Legal</h2>
+      <table class="privacy-table">
+        <thead>
+          <tr>
+            <th>Categoría de Datos</th>
+            <th>Finalidad Principal</th>
+            <th>Base Jurídica (RGPD)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Cuenta y Registro</strong><br><small>Email, contraseña en hash bcrypt, fecha de nacimiento.</small></td>
+            <td>Autenticación segura y verificación de mayoría de edad legal (+18).</td>
+            <td>Ejecución de Contrato (Art. 6.1.b) y Obligación Legal.</td>
+          </tr>
+          <tr>
+            <td><strong>Perfil Público</strong><br><small>Fotos, biografía, pronombres, intención, etiquetas.</small></td>
+            <td>Mostrar tu perfil en el Moodboard a otras personas afines.</td>
+            <td>Consentimiento Explícito (Art. 6.1.a y 9.2.a).</td>
+          </tr>
+          <tr>
+            <td><strong>Geolocalización</strong><br><small>Coordenadas GPS con opción aproximada.</small></td>
+            <td>Calcular distancias de exploración en el feed local.</td>
+            <td>Consentimiento Explícito (Art. 6.1.a).</td>
+          </tr>
+          <tr>
+            <td><strong>Verificación Biométrica</strong><br><small>Selfie con gestos para cotejo facial.</small></td>
+            <td>Validar identidad y prevenir perfiles falsos (Catfishing).</td>
+            <td>Consentimiento Explícito e Interés Legítimo en Seguridad.</td>
+          </tr>
+          <tr>
+            <td><strong>Mensajería y Fotos</strong><br><small>Texto del chat y fotos efímeras temporales.</small></td>
+            <td>Facilitar la comunicación consentida entre matches.</td>
+            <td>Ejecución de Contrato (Art. 6.1.b).</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="content-section">
+      <h2>3. Modos de Discreción y Privacidad Reforzada</h2>
+      <p>Entendemos que muchas personas de la comunidad sáfica requieren garantías adicionales de protección en su entorno personal o laboral:</p>
+      <ul>
+        <li><strong>Modo Fantasma:</strong> Desapareces inmediatamente del feed de exploración sin perder tus conversaciones existentes.</li>
+        <li><strong>Distancia Aproximada:</strong> Oculta la distancia exacta en metros o kilómetros reducidos y muestra solo un rango general para imposibilitar triangulaciones geográficas.</li>
+        <li><strong>Disfraz de Pánico (Quick Exit):</strong> Convierte en un toque la pantalla en un bloc de notas neutro con listas cotidianas para salvaguardar tu intimidad si alguien se acerca.</li>
+      </ul>
+    </section>
+
+    <section class="content-section">
+      <h2>4. Conservación y Derecho al Olvido</h2>
+      <p>Tus datos se conservan únicamente mientras mantengas activa tu cuenta. Cuando solicitas la eliminación desde <strong>Perfil > Ajustes > Eliminar Cuenta</strong>:</p>
+      <ul>
+        <li>Se borran permanentemente tu perfil, fotos subidas, chats, matches y preferencias.</li>
+        <li>Las copias de seguridad de seguridad se sobrescriben en un plazo máximo de 30 días.</li>
+        <li>Las fotos efímeras de los chats se eliminan del servidor tras su visualización por la destinataria.</li>
+      </ul>
+      <div class="highlight-box">
+        <strong>Garantía de Supresión:</strong> En Sparks la eliminación de cuenta es real y definitiva. No conservamos copias ocultas de tu perfil con fines de reorientación ni análisis masivo.
+      </div>
+    </section>
+
+    <section class="content-section">
+      <h2>5. Ejercicio de Derechos RGPD</h2>
+      <p>Tienes derecho a acceder a tus datos, rectificarlos, solicitar su supresión (olvido), oponerte a tratamientos específicos y solicitar la portabilidad de tu información en un formato estándar (JSON).</p>
+      <p>Para ejercitar cualquiera de estos derechos, envía un correo a <strong>privacidad@sparks.app</strong> indicando tu correo de registro. Atenderemos tu solicitud en un plazo máximo de 30 días.</p>
+      <p>Asimismo, tienes derecho a reclamar ante la <strong>Agencia Española de Protección de Datos (AEPD)</strong> en caso de considerar vulnerados tus derechos.</p>
+    </section>
+
+  </main>
+
+  <footer class="contact-footer">
+    <p>© 2026 Sparks App S.L. Todos los derechos reservados.</p>
+    <p style="margin-top: 8px;">Contacto de privacidad: <a href="mailto:privacidad@sparks.app">privacidad@sparks.app</a> | Delegada DPO: <a href="mailto:dpo@sparks.app">dpo@sparks.app</a></p>
+  </footer>
+
+</body>
+</html>

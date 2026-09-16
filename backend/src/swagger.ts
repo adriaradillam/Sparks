@@ -1,7 +1,7 @@
 export const swaggerSpec = {
   openapi: '3.0.0',
   info: {
-    title: 'Sparks API 💖✨',
+    title: 'Sparks API',
     version: '1.0.0',
     description:
       'Documentación técnica y especificación oficial de la API de **Sparks**, la app de citas y comunidad sáfica/queer.\n\nIncluye autenticación JWT, integración con Spotify Web API (PKCE), geolocalización, mensajería con fotos efímeras, planes comunitarios, subida de archivos multimedia y sistema estricto de seguridad, reporte y bloqueo conforme a las directrices de Apple App Store y Google Play.',
@@ -33,7 +33,7 @@ export const swaggerSpec = {
           email: { type: 'string', example: 'ana@sparks.app' },
           name: { type: 'string', example: 'Ana' },
           age: { type: 'integer', example: 28 },
-          bio: { type: 'string', example: 'Amante de los gatos, la música indie y el buen café ☕🐾' },
+          bio: { type: 'string', example: 'Amante de los gatos, la música indie y el buen café' },
           avatarUrl: { type: 'string', example: 'http://localhost:5000/uploads/photo-123.jpg' },
           pronouns: { type: 'string', example: 'Ella / She' },
           intention: { type: 'string', example: 'dating', enum: ['dating', 'friends', 'chat', 'events'] },
@@ -62,7 +62,7 @@ export const swaggerSpec = {
           id: { type: 'integer', example: 1 },
           conversationId: { type: 'integer', example: 2 },
           senderId: { type: 'integer', example: 1 },
-          text: { type: 'string', example: '¡Hola! ¿Qué tal tu día? ✨' },
+          text: { type: 'string', example: '¡Hola! ¿Qué tal tu día?' },
           type: { type: 'string', enum: ['text', 'icebreaker', 'ephemeral_image'], example: 'text' },
           imageUrl: { type: 'string', nullable: true },
           viewed: { type: 'boolean', example: false },
@@ -268,7 +268,7 @@ export const swaggerSpec = {
               schema: {
                 type: 'object',
                 properties: {
-                  text: { type: 'string', example: '¿Te apetece un café este viernes? ☕' },
+                  text: { type: 'string', example: '¿Te apetece un café este viernes?' },
                   type: { type: 'string', enum: ['text', 'icebreaker', 'ephemeral_image'], default: 'text' },
                   imageUrl: { type: 'string', nullable: true }
                 }
@@ -302,7 +302,7 @@ export const swaggerSpec = {
                 type: 'object',
                 required: ['title', 'category', 'description', 'locationName', 'dateTimeText'],
                 properties: {
-                  title: { type: 'string', example: 'Picnic y juegos en el Retiro 🧺🍓' },
+                  title: { type: 'string', example: 'Picnic y juegos en el Retiro' },
                   category: { type: 'string', enum: ['coffee', 'party', 'culture', 'outdoor', 'sports'] },
                   description: { type: 'string', example: 'Llevamos mantitas y picoteo para conocernos.' },
                   locationName: { type: 'string', example: 'Palacio de Cristal, Madrid' },

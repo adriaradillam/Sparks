@@ -56,6 +56,8 @@ const REPORT_REASONS = [
 export default function ReportBlockModal({
   visible,
   targetUser,
+  conversationId = null,
+  planId = null,
   onClose,
   onSuccessBlockOrReport
 }) {
@@ -73,12 +75,14 @@ export default function ReportBlockModal({
         method: 'POST',
         body: JSON.stringify({
           reason: selectedReason,
-          description: description.trim()
+          description: description.trim(),
+          conversationId: conversationId || undefined,
+          planId: planId || undefined
         })
       });
 
       Alert.alert(
-        '🛡️ Reporte Enviado',
+        'Reporte Enviado',
         data.message || 'La usuaria ha sido reportada a moderación y bloqueada.',
         [{ text: 'Entendido', onPress: () => {
           onClose();

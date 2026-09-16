@@ -1,22 +1,27 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { memoryStore } from '../store/memoryStore';
+import { memoryStore, calculateAge } from '../store/memoryStore';
 import { generateToken } from '../middleware/auth';
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { email, password, name, age, bio, avatarUrl, lat, lng } = req.body;
+    const { email, password, name, age, birthDate, bio, avatarUrl, lat, lng } = req.body;
 
-    if (!email || !password || !name || !age) {
-      return res.status(400).json({ error: 'Email, contraseña, nombre y edad son obligatorios.' });
+    let userAge = age ? parseInt(age) : 0;
+    if (birthDate) {
+      userAge = calculateAge(birthDate);
+    }
+
+    if (!email || !password || !name || (!userAge && !birthDate)) {
+      return res.status(400).json({ error: 'Email, contraseña, nombre y fecha de nacimiento son obligatorios.' });
     }
 
     if (password.length < 6) {
       return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres.' });
     }
 
-    if (parseInt(age) < 18) {
+    if (userAge < 18) {
       return res.status(400).json({ error: 'Debes ser mayor de 18 años para utilizar esta aplicación.' });
     }
 
@@ -33,7 +38,8 @@ export const register = async (req: Request, res: Response) => {
       email: email.toLowerCase(),
       passwordHash,
       name,
-      age: parseInt(age),
+      age: userAge,
+      birthDate: birthDate || undefined,
       bio: bio || '',
       avatarUrl: defaultAvatar,
       photos: [defaultAvatar],
@@ -50,10 +56,14 @@ export const register = async (req: Request, res: Response) => {
         id: newUser.id,
         email: newUser.email,
         name: newUser.name,
-        age: newUser.age,
+        age: newUser.birthDate ? calculateAge(newUser.birthDate) : newUser.age,
+        birthDate: newUser.birthDate,
         bio: newUser.bio,
         avatarUrl: newUser.avatarUrl,
-        photos: newUser.photos
+        photos: newUser.photos,
+        isVerified: newUser.isVerified || false,
+        isAdmin: newUser.isAdmin || false,
+        role: newUser.role || 'user'
       }
     });
   } catch (error) {
@@ -80,6 +90,12 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Credenciales inválidas. Comprueba tu correo y contraseña.' });
     }
 
+    if (user.isBanned) {
+      return res.status(403).json({
+        error: `Tu cuenta ha sido suspendida por el equipo de moderación: ${user.bannedReason || 'Infracción grave de las normas de la comunidad.'}`
+      });
+    }
+
     const token = generateToken(user.id, user.email);
 
     res.json({
@@ -89,10 +105,14 @@ export const login = async (req: Request, res: Response) => {
         id: user.id,
         email: user.email,
         name: user.name,
-        age: user.age,
+        age: user.birthDate ? calculateAge(user.birthDate) : user.age,
+        birthDate: user.birthDate,
         bio: user.bio,
         avatarUrl: user.avatarUrl,
-        photos: user.photos
+        photos: user.photos,
+        isVerified: user.isVerified || false,
+        isAdmin: user.isAdmin || false,
+        role: user.role || 'user'
       }
     });
   } catch (error) {

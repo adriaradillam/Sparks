@@ -13,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { apiRequest } from '../api';
-import { getAvatarSource } from '../screens/ProfileScreen';
+import { getAvatarSource } from '../utils/avatar';
 
 export default function BlockedUsersModal({ visible, onClose }) {
   const { theme, isDarkMode } = useTheme();

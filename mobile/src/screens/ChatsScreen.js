@@ -11,17 +11,26 @@ import {
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
-  SafeAreaView,
   Modal,
   ScrollView,
   Alert
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { apiRequest } from '../api';
-import { getAvatarSource } from './ProfileScreen';
+import { getAvatarSource } from '../utils/avatar';
 import ReportBlockModal from '../components/ReportBlockModal';
+import PlanChatModal from '../components/PlanChatModal';
+
+const CATEGORY_META = {
+  coffee: { label: 'Café & Tapas', icon: 'cafe', bg: '#ffe8d6', color: '#b08968' },
+  outdoor: { label: 'Aire Libre', icon: 'leaf', bg: '#d8f3dc', color: '#2d6a4f' },
+  party: { label: 'Fiesta & Juegos', icon: 'musical-notes', bg: '#ffccd5', color: '#c9184a' },
+  culture: { label: 'Cultura & Libros', icon: 'book', bg: '#e0aaff', color: '#5a189a' },
+  sports: { label: 'Deporte', icon: 'fitness', bg: '#caf0f8', color: '#0077b6' }
+};
 
 const SAMPLE_EPHEMERAL_PHOTOS = [
   'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600',
@@ -42,6 +51,12 @@ export default function ChatsScreen({ initialActiveChat, onClearActiveChat }) {
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
 
+  // Selector de Pestaña: Directos vs Grupos de Planes
+  const [chatTab, setChatTab] = useState('direct'); // 'direct' | 'plans'
+  const [plans, setPlans] = useState([]);
+  const [selectedPlanForChat, setSelectedPlanForChat] = useState(null);
+  const [planChatModalVisible, setPlanChatModalVisible] = useState(false);
+
   // Modales interactivos
   const [icebreakerModal, setIcebreakerModal] = useState(false);
   const [icebreakersList, setIcebreakersList] = useState([]);
@@ -54,6 +69,7 @@ export default function ChatsScreen({ initialActiveChat, onClearActiveChat }) {
   useEffect(() => {
     fetchConversations();
     fetchIcebreakers();
+    fetchPlans();
   }, []);
 
   useEffect(() => {
@@ -64,7 +80,7 @@ export default function ChatsScreen({ initialActiveChat, onClearActiveChat }) {
 
   useEffect(() => {
     let interval;
-    if (activeChat) {
+    if (activeChat && activeChat.conversationId) {
       fetchMessages(activeChat.conversationId);
       interval = setInterval(() => {
         fetchMessages(activeChat.conversationId, true);
@@ -96,7 +112,30 @@ export default function ChatsScreen({ initialActiveChat, onClearActiveChat }) {
     }
   };
 
+  const fetchPlans = async () => {
+    try {
+      const data = await apiRequest('/api/plans');
+      setPlans(data.plans || []);
+    } catch (err) {
+      console.error('Error fetching plans in chats:', err);
+    }
+  };
+
+  const handleOpenDirectWithUser = async (user) => {
+    try {
+      const data = await apiRequest(`/api/chats/start/${user.id}`, { method: 'POST' });
+      setActiveChat({
+        conversationId: data.conversationId,
+        partner: data.partner
+      });
+      fetchConversations();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const fetchMessages = async (convId, silent = false) => {
+    if (!convId) return;
     try {
       const data = await apiRequest(`/api/chats/${convId}/messages`);
       setMessages(data.messages || []);
@@ -213,6 +252,47 @@ export default function ChatsScreen({ initialActiveChat, onClearActiveChat }) {
     </TouchableOpacity>
   );
 
+  const renderPlanGroupItem = ({ item }) => {
+    const catMeta = CATEGORY_META[item.category] || CATEGORY_META.coffee;
+    return (
+      <TouchableOpacity
+        style={[styles.convCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+        activeOpacity={0.7}
+        onPress={() => {
+          setSelectedPlanForChat(item);
+          setPlanChatModalVisible(true);
+        }}
+      >
+        <View style={[styles.planGroupIconAvatar, { backgroundColor: catMeta.bg }]}>
+          <Ionicons name={catMeta.icon} size={24} color={catMeta.color} />
+        </View>
+
+        <View style={styles.convBody}>
+          <View style={styles.convHeaderRow}>
+            <Text style={[styles.convName, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+              {item.title}
+            </Text>
+            <Text style={[styles.convTime, { color: theme.colors.textMuted }]}>
+              {item.lastMessage
+                ? new Date(item.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : item.dateTimeText}
+            </Text>
+          </View>
+          <Text style={[styles.convLastMessage, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+            {item.lastMessage
+              ? `${item.lastMessage.senderName}: ${item.lastMessage.text}`
+              : 'Toca para abrir el chat del grupo estilo WhatsApp'}
+          </Text>
+        </View>
+
+        <View style={[styles.planAttendeesBadge, { backgroundColor: isDarkMode ? '#3d0c1e' : '#ffe5ec' }]}>
+          <Ionicons name="people" size={12} color={theme.colors.primary} style={{ marginRight: 3 }} />
+          <Text style={[styles.planAttendeesBadgeText, { color: theme.colors.primary }]}>{item.attendeeCount}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   const renderMessageBubble = ({ item }) => {
     if (item.type === 'icebreaker') {
       return (
@@ -306,15 +386,6 @@ export default function ChatsScreen({ initialActiveChat, onClearActiveChat }) {
             {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
         </View>
-        <ReportBlockModal
-          visible={reportModalVisible}
-          targetUser={activeChat?.partner}
-          onClose={() => setReportModalVisible(false)}
-          onSuccessBlockOrReport={() => {
-            setActiveChat(null);
-            fetchConversations();
-          }}
-        />
       </View>
     );
   };
@@ -521,7 +592,7 @@ export default function ChatsScreen({ initialActiveChat, onClearActiveChat }) {
                   style={styles.closePhotoBtn}
                   onPress={() => setViewingPhoto(null)}
                 >
-                  <Text style={styles.closePhotoText}>Cerrar ✕</Text>
+                  <Text style={styles.closePhotoText}>Cerrar</Text>
                 </TouchableOpacity>
               </View>
 
@@ -534,10 +605,24 @@ export default function ChatsScreen({ initialActiveChat, onClearActiveChat }) {
               )}
             </View>
           </Modal>
+
+          {/* Modal de Reporte y Bloqueo vinculado a la conversación */}
+          <ReportBlockModal
+            visible={reportModalVisible}
+            targetUser={activeChat?.partner}
+            conversationId={activeChat?.conversationId}
+            onClose={() => setReportModalVisible(false)}
+            onSuccessBlockOrReport={() => {
+              setActiveChat(null);
+              fetchConversations();
+            }}
+          />
         </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
+
+  const joinedPlans = plans.filter((p) => p.isJoined);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -546,15 +631,48 @@ export default function ChatsScreen({ initialActiveChat, onClearActiveChat }) {
           Mensajes
         </Text>
         <Text style={[styles.subheading, { color: theme.colors.textSecondary }]}>
-          Tus conversaciones activas
+          Tus conversaciones y grupos
         </Text>
+
+        {/* Selector de Pestañas: Directos vs Grupos de Planes */}
+        <View style={[styles.tabSwitchContainer, { backgroundColor: isDarkMode ? '#220812' : '#ffe8ed' }]}>
+          <TouchableOpacity
+            style={[styles.tabSwitchBtn, chatTab === 'direct' && { backgroundColor: theme.colors.primaryDark }]}
+            onPress={() => setChatTab('direct')}
+          >
+            <Ionicons
+              name="person"
+              size={13}
+              color={chatTab === 'direct' ? '#ffffff' : theme.colors.textSecondary}
+              style={{ marginRight: 5 }}
+            />
+            <Text style={[styles.tabSwitchText, { color: chatTab === 'direct' ? '#ffffff' : theme.colors.textSecondary }]}>
+              Directos ({conversations.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabSwitchBtn, chatTab === 'plans' && { backgroundColor: theme.colors.primaryDark }]}
+            onPress={() => setChatTab('plans')}
+          >
+            <Ionicons
+              name="chatbubbles"
+              size={13}
+              color={chatTab === 'plans' ? '#ffffff' : theme.colors.textSecondary}
+              style={{ marginRight: 5 }}
+            />
+            <Text style={[styles.tabSwitchText, { color: chatTab === 'plans' ? '#ffffff' : theme.colors.textSecondary }]}>
+              Grupos de Planes ({joinedPlans.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loading ? (
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color={theme.colors.primaryDark} />
         </View>
-      ) : (
+      ) : chatTab === 'direct' ? (
         <FlatList
           data={conversations}
           keyExtractor={(item) => item.id.toString()}
@@ -566,6 +684,7 @@ export default function ChatsScreen({ initialActiveChat, onClearActiveChat }) {
               onRefresh={() => {
                 setRefreshing(true);
                 fetchConversations();
+                fetchPlans();
               }}
               colors={[theme.colors.primaryDark]}
             />
@@ -573,14 +692,59 @@ export default function ChatsScreen({ initialActiveChat, onClearActiveChat }) {
           ListEmptyComponent={
             <View style={styles.emptyBox}>
               <Ionicons name="chatbubbles-outline" size={44} color={theme.colors.textMuted} style={{ marginBottom: 10 }} />
-              <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>Aún no tienes conversaciones</Text>
+              <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>Aún no tienes conversaciones directas</Text>
               <Text style={[styles.emptySubtitle, { color: theme.colors.textMuted }]}>
-                Explora la cuadrícula de chicas cercanas y envíales un flechazo para chatear.
+                Explora los perfiles cercanos para conectar o apúntate a un plan comunitario.
+              </Text>
+            </View>
+          }
+        />
+      ) : (
+        <FlatList
+          data={joinedPlans}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderPlanGroupItem}
+          contentContainerStyle={styles.convListContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                fetchPlans();
+              }}
+              colors={[theme.colors.primaryDark]}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyBox}>
+              <Ionicons name="calendar-outline" size={44} color={theme.colors.textMuted} style={{ marginBottom: 10 }} />
+              <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>No te has unido a ningún plan aún</Text>
+              <Text style={[styles.emptySubtitle, { color: theme.colors.textMuted }]}>
+                Solo puedes acceder al chat de grupo de los planes a los que te apuntes. Ve a la pestaña Planes para unirte.
               </Text>
             </View>
           }
         />
       )}
+
+      {/* Modal del Chat de Plan estilo WhatsApp */}
+      <PlanChatModal
+        visible={planChatModalVisible}
+        planId={selectedPlanForChat?.id}
+        onClose={() => {
+          setPlanChatModalVisible(false);
+          setSelectedPlanForChat(null);
+          fetchPlans();
+        }}
+        onOpenDirectChat={(user) => {
+          setPlanChatModalVisible(false);
+          setSelectedPlanForChat(null);
+          handleOpenDirectWithUser(user);
+        }}
+        onPlanUpdated={() => {
+          fetchPlans();
+        }}
+      />
     </View>
   );
 }
@@ -989,5 +1153,42 @@ const styles = StyleSheet.create({
   fullscreenPhoto: {
     width: '100%',
     height: '80%'
+  },
+  tabSwitchContainer: {
+    flexDirection: 'row',
+    borderRadius: 20,
+    padding: 3,
+    marginTop: 12
+  },
+  tabSwitchBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    borderRadius: 17
+  },
+  tabSwitchText: {
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  planGroupIconAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  planAttendeesBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8
+  },
+  planAttendeesBadgeText: {
+    fontSize: 11,
+    fontWeight: 'bold'
   }
 });

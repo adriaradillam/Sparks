@@ -36,6 +36,8 @@ async function main() {
         anthem: user.anthem ? JSON.stringify(user.anthem) : null,
         spotify: user.spotify ? JSON.stringify(user.spotify) : null,
         isVerified: user.isVerified ?? false,
+        isAdmin: user.isAdmin ?? false,
+        role: user.role ?? 'user',
         ghostMode: user.ghostMode ?? false,
         approxDistanceOnly: user.approxDistanceOnly ?? false,
         createdAt: user.createdAt || new Date()

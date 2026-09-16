@@ -11,11 +11,16 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
-  RefreshControl
+  RefreshControl,
+  Linking,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { apiRequest } from '../api';
+import PlanChatModal from '../components/PlanChatModal';
+import CalendarPickerModal from '../components/CalendarPickerModal';
+import PlacePickerModal from '../components/PlacePickerModal';
 
 const CATEGORIES = [
   { id: 'all', label: 'Todos', icon: 'apps' },
@@ -40,14 +45,25 @@ export default function PlansScreen({ onOpenChatWithOrganizer }) {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('all');
 
-  // Modal para publicar plan
+  // Modal para publicar o editar plan
   const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [editingPlan, setEditingPlan] = useState(null);
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState('coffee');
   const [newDateTime, setNewDateTime] = useState('');
   const [newLocation, setNewLocation] = useState('');
+  const [newLocationLat, setNewLocationLat] = useState(null);
+  const [newLocationLng, setNewLocationLng] = useState(null);
   const [newDescription, setNewDescription] = useState('');
   const [publishing, setPublishing] = useState(false);
+
+  // Modales de Fecha y Lugar
+  const [calendarModalVisible, setCalendarModalVisible] = useState(false);
+  const [placeModalVisible, setPlaceModalVisible] = useState(false);
+
+  // Chat del Plan estilo WhatsApp
+  const [selectedPlanForChat, setSelectedPlanForChat] = useState(null);
+  const [chatModalVisible, setChatModalVisible] = useState(false);
 
   useEffect(() => {
     fetchPlans(selectedCategory);
@@ -80,13 +96,61 @@ export default function PlansScreen({ onOpenChatWithOrganizer }) {
             : p
         )
       );
-      Alert.alert(data.isJoined ? '¡Genial!' : 'Desapuntada', data.message);
+      if (data.isJoined) {
+        Alert.alert(
+          '¡Te has apuntado al plan!',
+          '¿Quieres entrar ya al chat de grupo para saludar a las demás chicas?',
+          [
+            { text: 'Más tarde', style: 'cancel' },
+            {
+              text: 'Entrar al Chat',
+              onPress: () => {
+                setSelectedPlanForChat(plan);
+                setChatModalVisible(true);
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Desapuntada', data.message);
+      }
     } catch (err) {
       Alert.alert('Error', err.message);
     }
   };
 
-  const handlePublishPlan = async () => {
+  const handleOpenCreateModal = () => {
+    setEditingPlan(null);
+    setNewTitle('');
+    setNewCategory('coffee');
+    setNewDateTime('');
+    setNewLocation('');
+    setNewLocationLat(null);
+    setNewLocationLng(null);
+    setNewDescription('');
+    setCreateModalVisible(true);
+  };
+
+  const handleOpenEditModal = (plan) => {
+    setEditingPlan(plan);
+    setNewTitle(plan.title);
+    setNewCategory(plan.category);
+    setNewDateTime(plan.dateTimeText);
+    setNewLocation(plan.locationName);
+    setNewLocationLat(plan.locationLat || null);
+    setNewLocationLng(plan.locationLng || null);
+    setNewDescription(plan.description);
+    setCreateModalVisible(true);
+  };
+
+  const handleShowLocationInfo = (plan) => {
+    Alert.alert(
+      'Punto de Encuentro',
+      `${plan.locationName}\n\nCoordina la hora exacta y detalles con las demás chicas en el chat del plan.`
+    );
+  };
+
+  const handleSavePlan = async () => {
     if (!newTitle.trim() || !newDateTime.trim() || !newLocation.trim() || !newDescription.trim()) {
       Alert.alert('Campos incompletos', 'Por favor rellena todos los datos de tu plan.');
       return;
@@ -94,25 +158,46 @@ export default function PlansScreen({ onOpenChatWithOrganizer }) {
 
     setPublishing(true);
     try {
-      await apiRequest('/api/plans', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: newTitle.trim(),
-          category: newCategory,
-          dateTimeText: newDateTime.trim(),
-          locationName: newLocation.trim(),
-          description: newDescription.trim()
-        })
-      });
+      if (editingPlan) {
+        await apiRequest(`/api/plans/${editingPlan.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            title: newTitle.trim(),
+            category: newCategory,
+            dateTimeText: newDateTime.trim(),
+            locationName: newLocation.trim(),
+            locationLat: newLocationLat,
+            locationLng: newLocationLng,
+            description: newDescription.trim()
+          })
+        });
+        Alert.alert('¡Plan actualizado!', 'Los cambios se han guardado con éxito.');
+      } else {
+        await apiRequest('/api/plans', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: newTitle.trim(),
+            category: newCategory,
+            dateTimeText: newDateTime.trim(),
+            locationName: newLocation.trim(),
+            locationLat: newLocationLat,
+            locationLng: newLocationLng,
+            description: newDescription.trim()
+          })
+        });
+        Alert.alert('¡Plan publicado!', 'Tu plan ya es visible para toda la comunidad.');
+      }
       setCreateModalVisible(false);
+      setEditingPlan(null);
       setNewTitle('');
       setNewDateTime('');
       setNewLocation('');
+      setNewLocationLat(null);
+      setNewLocationLng(null);
       setNewDescription('');
       fetchPlans(selectedCategory);
-      Alert.alert('¡Plan publicado!', 'Tu plan ya es visible para toda la comunidad.');
     } catch (err) {
-      Alert.alert('Error al publicar', err.message);
+      Alert.alert('Error al guardar', err.message);
     } finally {
       setPublishing(false);
     }
@@ -125,17 +210,30 @@ export default function PlansScreen({ onOpenChatWithOrganizer }) {
       <View style={[styles.planCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
         {/* Encabezado del Plan */}
         <View style={styles.cardHeader}>
-          <View style={[styles.categoryBadge, { backgroundColor: isDarkMode ? '#2d0c1b' : catStyle.bg }]}>
-            <Ionicons
-              name={catStyle.icon}
-              size={12}
-              color={isDarkMode ? theme.colors.primary : catStyle.text}
-              style={{ marginRight: 4 }}
-            />
-            <Text style={[styles.categoryBadgeText, { color: isDarkMode ? theme.colors.primary : catStyle.text }]}>
-              {item.category.toUpperCase()}
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={[styles.categoryBadge, { backgroundColor: isDarkMode ? '#2d0c1b' : catStyle.bg }]}>
+              <Ionicons
+                name={catStyle.icon}
+                size={12}
+                color={isDarkMode ? theme.colors.primary : catStyle.text}
+                style={{ marginRight: 4 }}
+              />
+              <Text style={[styles.categoryBadgeText, { color: isDarkMode ? theme.colors.primary : catStyle.text }]}>
+                {item.category.toUpperCase()}
+              </Text>
+            </View>
+
+            {item.isMine && (
+              <TouchableOpacity
+                style={[styles.editBadgeBtn, { backgroundColor: isDarkMode ? '#3d0c1e' : '#ffe5ec', borderColor: theme.colors.border }]}
+                onPress={() => handleOpenEditModal(item)}
+              >
+                <Ionicons name="pencil" size={11} color={theme.colors.primary} style={{ marginRight: 3 }} />
+                <Text style={[styles.editBadgeBtnText, { color: theme.colors.primary }]}>Editar</Text>
+              </TouchableOpacity>
+            )}
           </View>
+
           <View style={styles.planDateRow}>
             <Ionicons name="time-outline" size={13} color={theme.colors.primary} style={{ marginRight: 4 }} />
             <Text style={[styles.planDateText, { color: theme.colors.primary }]}>{item.dateTimeText}</Text>
@@ -144,8 +242,23 @@ export default function PlansScreen({ onOpenChatWithOrganizer }) {
 
         <Text style={[styles.planTitle, { color: theme.colors.textPrimary }]}>{item.title}</Text>
         <View style={styles.locationRow}>
-          <Ionicons name="location-outline" size={14} color={theme.colors.textSecondary} style={{ marginRight: 4 }} />
-          <Text style={[styles.planLocationText, { color: theme.colors.textSecondary }]}>{item.locationName}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+            <Ionicons name="location" size={14} color={theme.colors.primary} style={{ marginRight: 4 }} />
+            <Text style={[styles.planLocationText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+              {item.locationName}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.openMapsPillBtn,
+              { backgroundColor: isDarkMode ? '#3d0c1e' : '#ffe5ec', borderColor: theme.colors.border }
+            ]}
+            onPress={() => handleShowLocationInfo(item)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="pin" size={12} color={theme.colors.primary} style={{ marginRight: 4 }} />
+            <Text style={[styles.openMapsPillText, { color: theme.colors.primary }]}>Lugar</Text>
+          </TouchableOpacity>
         </View>
         <Text style={[styles.planDescription, { color: theme.colors.textPrimary }]}>{item.description}</Text>
 
@@ -167,38 +280,80 @@ export default function PlansScreen({ onOpenChatWithOrganizer }) {
           </View>
         </View>
 
-        {/* Botones de Acción */}
-        <View style={styles.actionsRow}>
+        {/* Vista previa de último mensaje del grupo estilo WhatsApp */}
+        {item.lastMessage && (
           <TouchableOpacity
             style={[
-              styles.joinBtn,
-              item.isJoined ? styles.joinBtnActive : { backgroundColor: theme.colors.primaryDark }
+              styles.lastMessagePreview,
+              { backgroundColor: isDarkMode ? '#240713' : '#fff5f7', borderColor: theme.colors.border }
             ]}
-            onPress={() => handleToggleJoin(item)}
+            onPress={() => {
+              if (!item.isJoined) {
+                Alert.alert(
+                  'Únete al plan',
+                  'Debes apuntarte a este plan para acceder a su chat de grupo y hablar con las demás chicas.',
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: '¡Me apunto!', onPress: () => handleToggleJoin(item) }
+                  ]
+                );
+                return;
+              }
+              setSelectedPlanForChat(item);
+              setChatModalVisible(true);
+            }}
+            activeOpacity={0.7}
           >
-            <Ionicons
-              name={item.isJoined ? 'checkmark-circle' : 'hand-right'}
-              size={16}
-              color="#ffffff"
-              style={{ marginRight: 6 }}
-            />
-            <Text
-              style={[
-                styles.joinBtnText,
-                item.isJoined ? styles.joinBtnTextActive : styles.joinBtnTextInactive
-              ]}
-            >
-              {item.isJoined ? '¡Estás apuntada!' : '¡Me apunto!'}
+            <Ionicons name="chatbubbles" size={13} color={theme.colors.primary} style={{ marginRight: 6 }} />
+            <Text style={[styles.lastMessagePreviewText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+              <Text style={{ fontWeight: 'bold', color: theme.colors.textPrimary }}>{item.lastMessage.senderName}: </Text>
+              {item.lastMessage.text}
             </Text>
           </TouchableOpacity>
+        )}
 
-          {!item.isMine && (
+        {/* Botones de Acción */}
+        <View style={styles.actionsRow}>
+          {item.isJoined ? (
             <TouchableOpacity
-              style={[styles.chatOrganizerBtn, { backgroundColor: isDarkMode ? '#3d0c1e' : '#ffe5ec', borderColor: theme.colors.border }]}
-              onPress={() => onOpenChatWithOrganizer(item.creator)}
+              style={[styles.groupChatBtn, { backgroundColor: theme.colors.primaryDark }]}
+              onPress={() => {
+                setSelectedPlanForChat(item);
+                setChatModalVisible(true);
+              }}
             >
-              <Ionicons name="chatbubble-ellipses" size={18} color={theme.colors.primary} />
+              <Ionicons name="chatbubbles" size={16} color="#ffffff" style={{ marginRight: 6 }} />
+              <Text style={styles.groupChatBtnText}>Chat del Grupo ({item.attendeeCount})</Text>
             </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.joinBtn, { backgroundColor: theme.colors.primaryDark }]}
+              onPress={() => handleToggleJoin(item)}
+            >
+              <Ionicons name="hand-right" size={15} color="#ffffff" style={{ marginRight: 6 }} />
+              <Text style={styles.joinBtnText}>¡Me apunto para chatear!</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Botón secundario si está unida */}
+          {item.isJoined && (
+            item.isMine ? (
+              <TouchableOpacity
+                style={[styles.statusBadgeBtn, { backgroundColor: isDarkMode ? '#3d0c1e' : '#ffe5ec', borderColor: theme.colors.border }]}
+                onPress={() => handleOpenEditModal(item)}
+                title="Editar este plan"
+              >
+                <Ionicons name="create-outline" size={18} color={theme.colors.primary} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.statusBadgeBtn, { backgroundColor: isDarkMode ? '#1e382b' : '#d8f3dc', borderColor: '#2d6a4f' }]}
+                onPress={() => handleToggleJoin(item)}
+                title="Estás apuntada (toca para desapuntarte)"
+              >
+                <Ionicons name="checkmark-circle" size={19} color="#2d6a4f" />
+              </TouchableOpacity>
+            )
           )}
         </View>
       </View>
@@ -219,7 +374,7 @@ export default function PlansScreen({ onOpenChatWithOrganizer }) {
         </View>
         <TouchableOpacity
           style={[styles.newPlanHeaderBtn, { backgroundColor: theme.colors.primaryDark }]}
-          onPress={() => setCreateModalVisible(true)}
+          onPress={handleOpenCreateModal}
         >
           <Ionicons name="add" size={16} color="#ffffff" style={{ marginRight: 2 }} />
           <Text style={styles.newPlanHeaderBtnText}>Crear Plan</Text>
@@ -288,7 +443,7 @@ export default function PlansScreen({ onOpenChatWithOrganizer }) {
               </Text>
               <TouchableOpacity
                 style={[styles.createFirstBtn, { backgroundColor: theme.colors.primaryDark }]}
-                onPress={() => setCreateModalVisible(true)}
+                onPress={handleOpenCreateModal}
               >
                 <Text style={styles.createFirstBtnText}>+ Publicar un Plan</Text>
               </TouchableOpacity>
@@ -298,22 +453,20 @@ export default function PlansScreen({ onOpenChatWithOrganizer }) {
       )}
 
       {/* Modal para Crear y Publicar Plan */}
-      <Modal
-        visible={createModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setCreateModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: theme.colors.surface }]}>
+      {/* Vista para Crear y Publicar Plan (Overlay sin conflicto de Modales) */}
+      {createModalVisible && (
+        <View style={styles.createPlanFullOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Publicar Nuevo Plan</Text>
-              <TouchableOpacity onPress={() => setCreateModalVisible(false)}>
-                <Ionicons name="close" size={20} color={theme.colors.textMuted} />
+              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+                {editingPlan ? 'Editar Mi Plan' : 'Publicar Nuevo Plan'}
+              </Text>
+              <TouchableOpacity onPress={() => setCreateModalVisible(false)} style={{ padding: 4 }}>
+                <Ionicons name="close-circle" size={24} color={theme.colors.textMuted} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={[styles.label, { color: theme.colors.textPrimary }]}>Título del Plan</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
@@ -358,22 +511,81 @@ export default function PlansScreen({ onOpenChatWithOrganizer }) {
               </ScrollView>
 
               <Text style={[styles.label, { color: theme.colors.textPrimary }]}>¿Cuándo? (Fecha y hora)</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
-                placeholder="Ej. Este Viernes • 19:30"
-                placeholderTextColor={theme.colors.textMuted}
-                value={newDateTime}
-                onChangeText={setNewDateTime}
-              />
+              <TouchableOpacity
+                style={[
+                  styles.input,
+                  styles.pickerTriggerBtn,
+                  { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border }
+                ]}
+                onPress={() => setCalendarModalVisible(true)}
+                activeOpacity={0.7}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                  <Ionicons
+                    name="calendar"
+                    size={17}
+                    color={newDateTime ? theme.colors.primary : theme.colors.textMuted}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text
+                    style={[
+                      styles.pickerTriggerText,
+                      { color: newDateTime ? theme.colors.textPrimary : theme.colors.textMuted },
+                      newDateTime && { fontWeight: '600' }
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {newDateTime || 'Toca para elegir fecha y hora...'}
+                  </Text>
+                </View>
+                <View style={[styles.platformTinyBadge, { backgroundColor: isDarkMode ? '#3d0c1e' : '#ffe5ec' }]}>
+                  <Ionicons
+                    name={Platform.OS === 'ios' ? 'logo-apple' : 'logo-android'}
+                    size={12}
+                    color={theme.colors.primary}
+                    style={{ marginRight: 3 }}
+                  />
+                  <Text style={[styles.platformTinyBadgeText, { color: theme.colors.primary }]}>
+                    {Platform.OS === 'ios' ? 'Apple' : 'Android'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
 
               <Text style={[styles.label, { color: theme.colors.textPrimary }]}>¿Dónde? (Lugar o zona)</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
-                placeholder="Ej. Parque del Retiro / Cafetería Federal"
-                placeholderTextColor={theme.colors.textMuted}
-                value={newLocation}
-                onChangeText={setNewLocation}
-              />
+              <TouchableOpacity
+                style={[
+                  styles.input,
+                  styles.pickerTriggerBtn,
+                  { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border }
+                ]}
+                onPress={() => setPlaceModalVisible(true)}
+                activeOpacity={0.7}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                  <Ionicons
+                    name="location"
+                    size={17}
+                    color={newLocation ? theme.colors.primary : theme.colors.textMuted}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text
+                    style={[
+                      styles.pickerTriggerText,
+                      { color: newLocation ? theme.colors.textPrimary : theme.colors.textMuted },
+                      newLocation && { fontWeight: '600' }
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {newLocation || 'Toca para abrir el buscador de lugares...'}
+                  </Text>
+                </View>
+                <View style={[styles.platformTinyBadge, { backgroundColor: isDarkMode ? '#3d0c1e' : '#ffe5ec' }]}>
+                  <Ionicons name="search" size={12} color={theme.colors.primary} style={{ marginRight: 3 }} />
+                  <Text style={[styles.platformTinyBadgeText, { color: theme.colors.primary }]}>
+                    Buscador
+                  </Text>
+                </View>
+              </TouchableOpacity>
 
               <Text style={[styles.label, { color: theme.colors.textPrimary }]}>Descripción del Plan</Text>
               <TextInput
@@ -392,19 +604,66 @@ export default function PlansScreen({ onOpenChatWithOrganizer }) {
 
               <TouchableOpacity
                 style={[styles.publishBtn, { backgroundColor: theme.colors.primaryDark }]}
-                onPress={handlePublishPlan}
+                onPress={handleSavePlan}
                 disabled={publishing}
               >
                 {publishing ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.publishBtnText}>Publicar en el Tablón</Text>
+                  <Text style={styles.publishBtnText}>
+                    {editingPlan ? 'Guardar Cambios' : 'Publicar en el Tablón'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
-      </Modal>
+      )}
+
+      {/* Modal del Chat de Grupo estilo WhatsApp con Detalles de Asistentes */}
+      <PlanChatModal
+        visible={chatModalVisible}
+        planId={selectedPlanForChat?.id}
+        onClose={() => {
+          setChatModalVisible(false);
+          setSelectedPlanForChat(null);
+        }}
+        onOpenDirectChat={(user) => {
+          setChatModalVisible(false);
+          setSelectedPlanForChat(null);
+          if (onOpenChatWithOrganizer) {
+            onOpenChatWithOrganizer(user);
+          }
+        }}
+        onEditPlan={(planToEdit) => {
+          setChatModalVisible(false);
+          setSelectedPlanForChat(null);
+          handleOpenEditModal(planToEdit);
+        }}
+        onPlanUpdated={() => fetchPlans(selectedCategory)}
+      />
+
+      {/* Modal de Calendario Interactivo */}
+      <CalendarPickerModal
+        visible={calendarModalVisible}
+        initialDateTimeText={newDateTime}
+        onClose={() => setCalendarModalVisible(false)}
+        onSelectDateTime={(formattedText) => {
+          setNewDateTime(formattedText);
+        }}
+      />
+
+      {/* Modal de Búsqueda de Lugares en Google Maps */}
+      <PlacePickerModal
+        visible={placeModalVisible}
+        initialLocation={newLocation}
+        onClose={() => setPlaceModalVisible(false)}
+        onSelectLocation={({ name, lat, lng }) => {
+          setNewLocation(name);
+          setNewLocationLat(lat || null);
+          setNewLocationLng(lng || null);
+        }}
+      />
     </View>
   );
 }
@@ -491,6 +750,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: 'bold'
   },
+  editBadgeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginLeft: 8,
+    borderWidth: 1
+  },
+  editBadgeBtnText: {
+    fontSize: 10,
+    fontWeight: 'bold'
+  },
   planDateRow: {
     flexDirection: 'row',
     alignItems: 'center'
@@ -559,6 +831,55 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center'
   },
+  lastMessagePreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12
+  },
+  lastMessagePreviewText: {
+    fontSize: 12,
+    flex: 1
+  },
+  groupChatBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 12,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ff2a6d',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  groupChatBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold'
+  },
+  statusBadgeBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+    borderWidth: 1.5
+  },
+  peekChatBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+    borderWidth: 1
+  },
   joinBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -572,12 +893,7 @@ const styles = StyleSheet.create({
   },
   joinBtnText: {
     fontSize: 14,
-    fontWeight: 'bold'
-  },
-  joinBtnTextInactive: {
-    color: '#ffffff'
-  },
-  joinBtnTextActive: {
+    fontWeight: 'bold',
     color: '#ffffff'
   },
   chatOrganizerBtn: {
@@ -586,7 +902,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 10,
+    marginLeft: 8,
     borderWidth: 1
   },
   centerBox: {
@@ -684,6 +1000,50 @@ const styles = StyleSheet.create({
   publishBtnText: {
     color: '#ffffff',
     fontSize: 15,
+    fontWeight: 'bold'
+  },
+  openMapsPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1
+  },
+  openMapsPillText: {
+    fontSize: 10,
+    fontWeight: 'bold'
+  },
+  pickerTriggerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 13
+  },
+  pickerTriggerText: {
+    fontSize: 14
+  },
+  createPlanFullOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    padding: 16,
+    zIndex: 999,
+    elevation: 999
+  },
+  platformTinyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8
+  },
+  platformTinyBadgeText: {
+    fontSize: 10,
     fontWeight: 'bold'
   }
 });

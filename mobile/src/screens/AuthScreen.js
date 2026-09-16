@@ -15,12 +15,28 @@ import {
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as ImagePicker from 'expo-image-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { apiRequest, setAuthToken, uploadPhoto } from '../api';
 import LegalTermsModal from '../components/LegalTermsModal';
 
 const defaultAvatarImg = require('../../assets/default_avatar.png');
+
+const MONTHS_OPTIONS = [
+  { value: '01', label: 'Enero' },
+  { value: '02', label: 'Febrero' },
+  { value: '03', label: 'Marzo' },
+  { value: '04', label: 'Abril' },
+  { value: '05', label: 'Mayo' },
+  { value: '06', label: 'Junio' },
+  { value: '07', label: 'Julio' },
+  { value: '08', label: 'Agosto' },
+  { value: '09', label: 'Septiembre' },
+  { value: '10', label: 'Octubre' },
+  { value: '11', label: 'Noviembre' },
+  { value: '12', label: 'Diciembre' }
+];
 
 export default function AuthScreen({ onLoginSuccess }) {
   const { theme, isDarkMode } = useTheme();
@@ -36,7 +52,13 @@ export default function AuthScreen({ onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [age, setAge] = useState('');
+
+  // Selector Nativo de Fecha de Nacimiento (Apple / Android)
+  const defaultInitialBirth = new Date(new Date().getFullYear() - 22, 4, 15);
+  const [selectedBirthDate, setSelectedBirthDate] = useState(null);
+  const [tempBirthDate, setTempBirthDate] = useState(defaultInitialBirth);
+  const [showBirthPicker, setShowBirthPicker] = useState(false);
+
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('default');
 
@@ -47,6 +69,60 @@ export default function AuthScreen({ onLoginSuccess }) {
   const [newPassword, setNewPassword] = useState('');
   const [resetStep, setResetStep] = useState(1);
   const [legalModalVisible, setLegalModalVisible] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState('terms');
+
+  const openLegalModal = (tab = 'terms') => {
+    setLegalModalTab(tab);
+    setLegalModalVisible(true);
+  };
+
+  const calculateAgeFromDate = (date) => {
+    if (!date || !(date instanceof Date) || isNaN(date.getTime())) return null;
+    const now = new Date();
+    let calculated = now.getFullYear() - date.getFullYear();
+    const mDiff = now.getMonth() - date.getMonth();
+    if (mDiff < 0 || (mDiff === 0 && now.getDate() < date.getDate())) {
+      calculated--;
+    }
+    return calculated;
+  };
+
+  const formatBirthDateDisplay = (date) => {
+    if (!date) return '';
+    const day = date.getDate();
+    const months = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ];
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+    return `${day} de ${month} de ${year}`;
+  };
+
+  const handleOpenBirthPicker = () => {
+    setTempBirthDate(selectedBirthDate || defaultInitialBirth);
+    setShowBirthPicker(true);
+  };
+
+  const handleAndroidBirthChange = (event, date) => {
+    setShowBirthPicker(false);
+    if (event.type === 'set' && date) {
+      setSelectedBirthDate(date);
+      setError('');
+    }
+  };
+
+  const handleIOSBirthChange = (event, date) => {
+    if (date) {
+      setTempBirthDate(date);
+    }
+  };
+
+  const handleIOSBirthConfirm = () => {
+    setSelectedBirthDate(tempBirthDate);
+    setShowBirthPicker(false);
+    setError('');
+  };
 
   useEffect(() => {
     checkBiometrics();
@@ -95,6 +171,7 @@ export default function AuthScreen({ onLoginSuccess }) {
       }
     } catch (e) {
       console.warn(e);
+      setError(e.message || 'Error al iniciar sesión con biometría.');
     } finally {
       setLoading(false);
     }
@@ -143,12 +220,17 @@ export default function AuthScreen({ onLoginSuccess }) {
     }
 
     if (!isLogin) {
-      if (!name || !age) {
-        setError('Por favor, ingresa tu nombre y edad.');
+      if (!name.trim()) {
+        setError('Por favor, ingresa tu nombre.');
         return;
       }
-      if (parseInt(age) < 18) {
-        setError('Debes ser mayor de 18 años para usar Sparks.');
+      const calculatedAge = calculateAgeFromDate(selectedBirthDate);
+      if (calculatedAge === null) {
+        setError('Por favor, selecciona tu fecha de nacimiento.');
+        return;
+      }
+      if (calculatedAge < 18) {
+        setError(`Tienes ${calculatedAge} años. Debes ser mayor de 18 años para usar Sparks.`);
         return;
       }
     }
@@ -175,13 +257,20 @@ export default function AuthScreen({ onLoginSuccess }) {
           }
         }
 
+        const calculatedAge = calculateAgeFromDate(selectedBirthDate);
+        const y = selectedBirthDate.getFullYear();
+        const m = String(selectedBirthDate.getMonth() + 1).padStart(2, '0');
+        const d = String(selectedBirthDate.getDate()).padStart(2, '0');
+        const birthDateFormatted = `${y}-${m}-${d}`;
+
         const data = await apiRequest('/api/auth/register', {
           method: 'POST',
           body: JSON.stringify({
             email: email.trim(),
             password,
             name: name.trim(),
-            age: parseInt(age),
+            age: calculatedAge,
+            birthDate: birthDateFormatted,
             bio: bio.trim(),
             avatarUrl: finalAvatar
           })
@@ -297,15 +386,78 @@ export default function AuthScreen({ onLoginSuccess }) {
               onChangeText={setName}
             />
 
-            <Text style={[styles.label, { color: theme.colors.textPrimary }]}>Edad (mínimo 18 años)</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
-              placeholder="Ej. 24"
-              placeholderTextColor={theme.colors.textMuted}
-              keyboardType="numeric"
-              value={age}
-              onChangeText={setAge}
-            />
+            <Text style={[styles.label, { color: theme.colors.textPrimary }]}>
+              Fecha de Nacimiento ({Platform.OS === 'ios' ? 'Apple' : 'Android'})
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.input,
+                styles.birthNativeTriggerBtn,
+                { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border }
+              ]}
+              onPress={handleOpenBirthPicker}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <Ionicons
+                  name="calendar"
+                  size={18}
+                  color={selectedBirthDate ? theme.colors.primary : theme.colors.textMuted}
+                  style={{ marginRight: 8 }}
+                />
+                <Text
+                  style={[
+                    styles.birthNativeTriggerText,
+                    { color: selectedBirthDate ? theme.colors.textPrimary : theme.colors.textMuted },
+                    selectedBirthDate && { fontWeight: '600' }
+                  ]}
+                >
+                  {selectedBirthDate ? formatBirthDateDisplay(selectedBirthDate) : 'Toca para seleccionar tu fecha...'}
+                </Text>
+              </View>
+              <View style={[styles.platformBadge, { backgroundColor: isDarkMode ? '#3d0c1e' : '#ffe5ec' }]}>
+                <Ionicons
+                  name={Platform.OS === 'ios' ? 'logo-apple' : 'logo-android'}
+                  size={13}
+                  color={theme.colors.primary}
+                  style={{ marginRight: 3 }}
+                />
+                <Text style={[styles.platformBadgeText, { color: theme.colors.primary }]}>
+                  {Platform.OS === 'ios' ? 'iOS' : 'Android'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Feedback de Edad Calculada */}
+            {(() => {
+              const calcAge = calculateAgeFromDate(selectedBirthDate);
+              if (calcAge !== null) {
+                if (calcAge >= 18) {
+                  return (
+                    <View style={[styles.ageFeedbackCard, { backgroundColor: isDarkMode ? '#064e3b' : '#ecfdf5', borderColor: '#10b981' }]}>
+                      <Ionicons name="gift" size={16} color="#10b981" style={{ marginRight: 6 }} />
+                      <Text style={[styles.ageFeedbackText, { color: isDarkMode ? '#a7f3d0' : '#065f46' }]}>
+                        Tienes {calcAge} años cumplidos. Tu edad se actualizará automáticamente en cada cumpleaños.
+                      </Text>
+                    </View>
+                  );
+                } else {
+                  return (
+                    <View style={[styles.ageFeedbackCard, { backgroundColor: isDarkMode ? '#450a0a' : '#fef2f2', borderColor: '#ef4444' }]}>
+                      <Ionicons name="alert-circle" size={16} color="#ef4444" style={{ marginRight: 6 }} />
+                      <Text style={[styles.ageFeedbackText, { color: isDarkMode ? '#fecaca' : '#991b1b' }]}>
+                        Tienes {calcAge} años. Debes tener al menos 18 años para registrarte en Sparks.
+                      </Text>
+                    </View>
+                  );
+                }
+              }
+              return (
+                <Text style={[styles.birthHelperText, { color: theme.colors.textMuted }]}>
+                  Usa el selector nativo de tu teléfono para fijar tu fecha. Tu edad se actualizará cada año.
+                </Text>
+              );
+            })()}
 
             <Text style={[styles.label, { color: theme.colors.textPrimary }]}>Foto de perfil</Text>
             <View style={[styles.avatarSelectorCard, { backgroundColor: theme.colors.surfaceSubtle, borderColor: theme.colors.border }]}>
@@ -397,17 +549,32 @@ export default function AuthScreen({ onLoginSuccess }) {
         </TouchableOpacity>
 
         {!isLogin && (
-          <TouchableOpacity
-            style={styles.legalDisclaimerBtn}
-            onPress={() => setLegalModalVisible(true)}
-          >
+          <View style={styles.legalDisclaimerContainer}>
             <Text style={[styles.legalDisclaimerText, { color: theme.colors.textMuted }]}>
-              Al registrarte aceptas nuestros{' '}
-              <Text style={{ color: theme.colors.primary, textDecorationLine: 'underline' }}>
-                Términos (EULA) y Política de Privacidad
+              Al pulsar en "Crear mi Perfil" declaras tener al menos 18 años y aceptas los{' '}
+              <Text
+                style={[styles.legalLink, { color: theme.colors.primary }]}
+                onPress={() => openLegalModal('terms')}
+              >
+                Términos de Servicio
               </Text>
+              . Conoce cómo protegemos tus datos en nuestra{' '}
+              <Text
+                style={[styles.legalLink, { color: theme.colors.primary }]}
+                onPress={() => openLegalModal('privacy')}
+              >
+                Política de Privacidad
+              </Text>{' '}
+              y consulta nuestras pautas de{' '}
+              <Text
+                style={[styles.legalLink, { color: theme.colors.primary }]}
+                onPress={() => openLegalModal('safety')}
+              >
+                Seguridad en Citas
+              </Text>
+              .
             </Text>
-          </TouchableOpacity>
+          </View>
         )}
 
         {/* Acceso Rápido con Face ID / Touch ID */}
@@ -420,6 +587,80 @@ export default function AuthScreen({ onLoginSuccess }) {
             <Ionicons name="scan-circle-outline" size={20} color="#0077b6" style={{ marginRight: 8 }} />
             <Text style={[styles.biometricLoginText, { color: '#0077b6' }]}>
               Entrar con {biometricName}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Acceso rápido a cuentas demo */}
+        {isLogin && (
+          <View style={styles.demoSection}>
+            <Text style={[styles.demoSectionTitle, { color: theme.colors.textMuted }]}>
+              Cuentas demo para probar rápido:
+            </Text>
+            <View style={styles.demoButtonsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.demoUserBadge,
+                  {
+                    borderColor: theme.colors.border,
+                    backgroundColor: isDarkMode ? '#280814' : '#ffe5ec'
+                  }
+                ]}
+                onPress={() => {
+                  setEmail('ana@sparks.app');
+                  setPassword('123456');
+                  setError('');
+                }}
+              >
+                <Ionicons name="sparkles" size={13} color={theme.colors.primary} style={{ marginRight: 4 }} />
+                <Text style={[styles.demoUserBadgeText, { color: theme.colors.primary }]}>Ana</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.demoUserBadge,
+                  {
+                    borderColor: theme.colors.border,
+                    backgroundColor: isDarkMode ? '#280814' : '#ffe5ec'
+                  }
+                ]}
+                onPress={() => {
+                  setEmail('laura@sparks.app');
+                  setPassword('123456');
+                  setError('');
+                }}
+              >
+                <Ionicons name="sparkles" size={13} color={theme.colors.primary} style={{ marginRight: 4 }} />
+                <Text style={[styles.demoUserBadgeText, { color: theme.colors.primary }]}>Laura</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.demoUserBadge,
+                  {
+                    borderColor: theme.colors.border,
+                    backgroundColor: isDarkMode ? '#280814' : '#ffe5ec'
+                  }
+                ]}
+                onPress={() => {
+                  setEmail('elena@sparks.app');
+                  setPassword('123456');
+                  setError('');
+                }}
+              >
+                <Ionicons name="sparkles" size={13} color={theme.colors.primary} style={{ marginRight: 4 }} />
+                <Text style={[styles.demoUserBadgeText, { color: theme.colors.primary }]}>Elena</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {isLogin && (
+          <TouchableOpacity
+            style={{ marginTop: 22, marginBottom: 8, alignItems: 'center' }}
+            onPress={() => openLegalModal('terms')}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 11.5, color: theme.colors.textMuted, textDecorationLine: 'underline' }}>
+              Términos de Servicio • Privacidad • Seguridad
             </Text>
           </TouchableOpacity>
         )}
@@ -506,25 +747,78 @@ export default function AuthScreen({ onLoginSuccess }) {
           </View>
         </View>
       </Modal>
+      {/* Selector Nativo para Android */}
+      {Platform.OS === 'android' && showBirthPicker && (
+        <DateTimePicker
+          value={tempBirthDate}
+          mode="date"
+          display="default"
+          maximumDate={new Date()}
+          onChange={handleAndroidBirthChange}
+        />
+      )}
+
+      {/* Selector Nativo para iOS (Apple UIDatePicker con ruedas y hápticos) */}
+      {Platform.OS === 'ios' && (
+        <Modal visible={showBirthPicker} transparent animationType="slide" onRequestClose={() => setShowBirthPicker(false)}>
+          <View style={styles.iosBirthOverlay}>
+            <View style={[styles.iosBirthSheet, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+              <View style={[styles.iosBirthToolbar, { borderBottomColor: theme.colors.border }]}>
+                <TouchableOpacity onPress={() => setShowBirthPicker(false)} style={styles.toolbarBtn}>
+                  <Text style={[styles.toolbarBtnTextCancel, { color: theme.colors.textMuted }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <Text style={[styles.toolbarTitle, { color: theme.colors.textPrimary }]}>Fecha de Nacimiento</Text>
+                <TouchableOpacity onPress={handleIOSBirthConfirm} style={styles.toolbarBtn}>
+                  <Text style={[styles.toolbarBtnTextDone, { color: theme.colors.primary }]}>Listo</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.iosPickerContainer}>
+                <DateTimePicker
+                  value={tempBirthDate}
+                  mode="date"
+                  display="spinner"
+                  locale="es-ES"
+                  maximumDate={new Date()}
+                  onChange={handleIOSBirthChange}
+                  textColor={isDarkMode ? '#ffffff' : '#111827'}
+                  themeVariant={isDarkMode ? 'dark' : 'light'}
+                  style={styles.iosPickerComponent}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       {/* Modal de Términos Legales & Privacidad */}
       <LegalTermsModal
         visible={legalModalVisible}
+        initialTab={legalModalTab}
         onClose={() => setLegalModalVisible(false)}
       />
-    </KeyboardAvoidingView>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  legalDisclaimerContainer: {
+    marginTop: 14,
+    paddingHorizontal: 8,
+    alignItems: 'center'
+  },
   legalDisclaimerBtn: {
     marginTop: 10,
     paddingHorizontal: 10,
     alignItems: 'center'
   },
   legalDisclaimerText: {
-    fontSize: 11,
+    fontSize: 11.5,
     textAlign: 'center',
-    lineHeight: 16
+    lineHeight: 17
+  },
+  legalLink: {
+    fontWeight: '700',
+    textDecorationLine: 'underline'
   },
   container: {
     flex: 1
@@ -691,6 +985,32 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold'
   },
+  demoSection: {
+    marginTop: 18,
+    alignItems: 'center'
+  },
+  demoSectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8
+  },
+  demoButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8
+  },
+  demoUserBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1
+  },
+  demoUserBadgeText: {
+    fontSize: 13,
+    fontWeight: 'bold'
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.8)',
@@ -722,5 +1042,122 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 14,
     fontWeight: '600'
+  },
+  birthDateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8
+  },
+  birthColDay: {
+    flex: 0.26
+  },
+  birthColMonth: {
+    flex: 0.44
+  },
+  birthColYear: {
+    flex: 0.26
+  },
+  miniFieldLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 4
+  },
+  birthInput: {
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: 'bold',
+    paddingHorizontal: 6
+  },
+  monthPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: Platform.OS === 'ios' ? 14 : 10
+  },
+  monthPickerText: {
+    fontSize: 14,
+    fontWeight: '600'
+  },
+  ageFeedbackCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 6,
+    marginBottom: 10
+  },
+  ageFeedbackText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 16
+  },
+  birthNativeTriggerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 13,
+    marginBottom: 6
+  },
+  birthNativeTriggerText: {
+    fontSize: 14
+  },
+  platformBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8
+  },
+  platformBadgeText: {
+    fontSize: 11,
+    fontWeight: 'bold'
+  },
+  iosBirthOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end'
+  },
+  iosBirthSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    paddingBottom: 24
+  },
+  iosBirthToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth
+  },
+  toolbarBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8
+  },
+  toolbarBtnTextCancel: {
+    fontSize: 16
+  },
+  toolbarBtnTextDone: {
+    fontSize: 16,
+    fontWeight: 'bold'
+  },
+  toolbarTitle: {
+    fontSize: 16,
+    fontWeight: '600'
+  },
+  iosPickerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8
+  },
+  iosPickerComponent: {
+    width: '100%',
+    height: 216
   }
 });

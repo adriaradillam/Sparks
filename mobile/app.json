@@ -43,7 +43,9 @@
           "photosPermission": "Sparks necesita acceso a tus fotos para seleccionar tu foto de perfil.",
           "cameraPermission": "Sparks necesita acceso a la cámara para fotos de verificación y perfil."
         }
-      ]
+      ],
+      "expo-status-bar",
+      "@react-native-community/datetimepicker"
     ]
   }
 }

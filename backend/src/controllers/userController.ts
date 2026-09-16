@@ -1,11 +1,10 @@
 import { Request, Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { memoryStore, CURATED_ANTHEMS, DEMO_SPOTIFY_ARTISTS, User } from '../store/memoryStore';
-import { pool } from '../db';
+import { memoryStore, CURATED_ANTHEMS, DEMO_SPOTIFY_ARTISTS, User, calculateAge } from '../store/memoryStore';
 
 function getOrRestoreUser(req: AuthRequest): User {
   let user = memoryStore.users.find(
-    (u) => u.id === req.userId || (req.userEmail && u.email.toLowerCase() === req.userEmail.toLowerCase())
+    (u) => u.id === req.userId || u.email.toLowerCase() === req.userEmail?.toLowerCase()
   );
 
   if (!user && req.userId) {
@@ -23,9 +22,7 @@ function getOrRestoreUser(req: AuthRequest): User {
     user.id = req.userId;
   }
 
-  if (!user) {
-    user = memoryStore.users[0];
-  }
+  user ??= memoryStore.users[0];
 
   return user;
 }
@@ -87,7 +84,8 @@ export const getMe = async (req: AuthRequest, res: Response) => {
         id: user.id,
         email: user.email,
         name: user.name,
-        age: user.age,
+        age: user.birthDate ? calculateAge(user.birthDate) : user.age,
+        birthDate: user.birthDate || null,
         bio: user.bio,
         avatarUrl: user.avatarUrl,
         photos: user.photos,
@@ -99,6 +97,10 @@ export const getMe = async (req: AuthRequest, res: Response) => {
         anthem: user.anthem || null,
         spotify: user.spotify || { connected: false, username: '', topArtists: [] },
         isVerified: user.isVerified || false,
+        verifiedAt: user.verifiedAt || null,
+        verificationMethod: user.verificationMethod || null,
+        isAdmin: user.isAdmin || false,
+        role: user.role || 'user',
         ghostMode: user.ghostMode || false,
         approxDistanceOnly: user.approxDistanceOnly || false
       }
@@ -111,19 +113,25 @@ export const getMe = async (req: AuthRequest, res: Response) => {
 
 export const updateMe = async (req: AuthRequest, res: Response) => {
   try {
-    const { name, age, bio, avatarUrl, photos, lat, lng, pronouns, intention, tags, anthem } = req.body;
+    const { name, age, birthDate, bio, avatarUrl, photos, lat, lng, pronouns, intention, tags, anthem } = req.body;
     const user = getOrRestoreUser(req);
 
     if (name) user.name = name;
-    if (age) user.age = parseInt(age);
+    if (birthDate) {
+      user.birthDate = birthDate;
+      user.age = calculateAge(birthDate);
+    } else if (age) {
+      user.age = Number.parseInt(age, 10);
+    }
     if (bio !== undefined) user.bio = bio;
     if (avatarUrl) {
-      user.avatarUrl = avatarUrl;
       user.isVerified = false;
+      user.verifiedAt = undefined;
+      user.verificationMethod = undefined;
     }
     if (photos && Array.isArray(photos)) user.photos = photos;
-    if (lat !== undefined) user.lat = parseFloat(lat);
-    if (lng !== undefined) user.lng = parseFloat(lng);
+    if (lat !== undefined) user.lat = Number.parseFloat(lat);
+    if (lng !== undefined) user.lng = Number.parseFloat(lng);
     if (pronouns !== undefined) user.pronouns = pronouns;
     if (intention !== undefined) user.intention = intention;
     if (tags && Array.isArray(tags)) user.tags = tags;
@@ -135,7 +143,8 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
         id: user.id,
         email: user.email,
         name: user.name,
-        age: user.age,
+        age: user.birthDate ? calculateAge(user.birthDate) : user.age,
+        birthDate: user.birthDate || null,
         bio: user.bio,
         avatarUrl: user.avatarUrl,
         photos: user.photos,
@@ -145,6 +154,10 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
         anthem: user.anthem,
         spotify: user.spotify,
         isVerified: user.isVerified,
+        verifiedAt: user.verifiedAt,
+        verificationMethod: user.verificationMethod,
+        isAdmin: user.isAdmin || false,
+        role: user.role || 'user',
         ghostMode: user.ghostMode,
         approxDistanceOnly: user.approxDistanceOnly
       }
@@ -160,8 +173,8 @@ export const updatePrivacy = async (req: AuthRequest, res: Response) => {
     const { ghostMode, approxDistanceOnly } = req.body;
     const user = getOrRestoreUser(req);
 
-    if (ghostMode !== undefined) user.ghostMode = Boolean(ghostMode);
-    if (approxDistanceOnly !== undefined) user.approxDistanceOnly = Boolean(approxDistanceOnly);
+    if (ghostMode !== undefined) user.ghostMode = !!ghostMode;
+    if (approxDistanceOnly !== undefined) user.approxDistanceOnly = !!approxDistanceOnly;
 
     res.json({
       message: 'Preferencias de privacidad actualizadas.',
@@ -179,12 +192,18 @@ export const updatePrivacy = async (req: AuthRequest, res: Response) => {
 export const verifyUser = async (req: AuthRequest, res: Response) => {
   try {
     const user = getOrRestoreUser(req);
+    const { method } = req.body || {};
+
     user.isVerified = true;
+    user.verifiedAt = new Date().toISOString();
+    user.verificationMethod = method || 'Biometría Nativa (Face ID)';
 
     res.json({
       success: true,
-      message: '¡Felicidades! Tu perfil ha sido verificado con éxito. Ya tienes tu Check Azul.',
-      isVerified: true
+      message: '¡Identidad verificada con éxito! Tu perfil ahora cuenta con el distintivo oficial de verificación.',
+      isVerified: true,
+      verifiedAt: user.verifiedAt,
+      verificationMethod: user.verificationMethod
     });
   } catch (error) {
     console.error('Error en verifyUser:', error);
@@ -198,16 +217,10 @@ export const compareFacesAndVerify = async (req: AuthRequest, res: Response) => 
     const { selfieUri, forceMode } = req.body;
 
     let isMatch = false;
-    let score = 14.8;
-    let title = 'Incompatibilidad Morfológica Crítica';
-    let reason = 'Disparidad en la malla de 468 nodos faciales. La estructura ósea, proporciones periorbitales y ángulo mandibular del selfie no coinciden con la usuaria del perfil oficial.';
-    let metrics = {
-      meshNodesCount: 468,
-      eyeDistanceRatio: '32.1% (Discrepancia alta)',
-      jawAngleDisparity: '74.2% (Incompatible)',
-      morphologyType: 'Estructura ósea no coincidente / Rasgos masculinos detectados',
-      symmetryScore: '18.4%'
-    };
+    let score: number;
+    let title: string;
+    let reason: string;
+    let metrics: Record<string, any>;
 
     if (forceMode === 'match') {
       isMatch = true;
@@ -223,7 +236,6 @@ export const compareFacesAndVerify = async (req: AuthRequest, res: Response) => 
       };
       user.isVerified = true;
     } else if (forceMode === 'mismatch') {
-      isMatch = false;
       score = 12.3;
       title = 'Detección de Persona Diferente (Catfish Bloqueado)';
       reason = 'La topología 3D de la cara no corresponde a la persona del perfil registrado. Verificación denegada por seguridad.';
@@ -234,33 +246,30 @@ export const compareFacesAndVerify = async (req: AuthRequest, res: Response) => 
         morphologyType: 'Morfología incompatible con la foto oficial',
         symmetryScore: '14.1%'
       };
+    } else if (selfieUri && selfieUri === user.avatarUrl) {
+      isMatch = true;
+      score = 98.6;
+      title = 'Identidad Biométrica Confirmada';
+      reason = 'Malla facial de 468 puntos mapeada satisfactoriamente.';
+      metrics = {
+        meshNodesCount: 468,
+        eyeDistanceRatio: '99.1% (Coincidencia exacta)',
+        jawAngleDisparity: '1.4% (Tolerancia óptima)',
+        morphologyType: 'Proporciones faciales concordantes',
+        symmetryScore: '98.2%'
+      };
+      user.isVerified = true;
     } else {
-      if (selfieUri && selfieUri === user.avatarUrl) {
-        isMatch = true;
-        score = 98.6;
-        title = 'Identidad Biométrica Confirmada';
-        reason = 'Malla facial de 468 puntos mapeada satisfactoriamente.';
-        metrics = {
-          meshNodesCount: 468,
-          eyeDistanceRatio: '99.1% (Coincidencia exacta)',
-          jawAngleDisparity: '1.4% (Tolerancia óptima)',
-          morphologyType: 'Proporciones faciales concordantes',
-          symmetryScore: '98.2%'
-        };
-        user.isVerified = true;
-      } else {
-        isMatch = false;
-        score = 14.8;
-        title = 'Incompatibilidad Facial Detectada';
-        reason = 'Disparidad de malla facial: Las 468 coordenadas biométricas del selfie no corresponden con la foto del perfil oficial. Acceso al Check Azul bloqueado.';
-        metrics = {
-          meshNodesCount: 468,
-          eyeDistanceRatio: '32.1% (Discrepancia alta)',
-          jawAngleDisparity: '74.2% (Incompatible)',
-          morphologyType: 'Estructura ósea no coincidente',
-          symmetryScore: '18.4%'
-        };
-      }
+      score = 14.8;
+      title = 'Incompatibilidad Facial Detectada';
+      reason = 'Disparidad de malla facial: Las 468 coordenadas biométricas del selfie no corresponden con la foto del perfil oficial. Acceso al Check Azul bloqueado.';
+      metrics = {
+        meshNodesCount: 468,
+        eyeDistanceRatio: '32.1% (Discrepancia alta)',
+        jawAngleDisparity: '74.2% (Incompatible)',
+        morphologyType: 'Estructura ósea no coincidente',
+        symmetryScore: '18.4%'
+      };
     }
 
     res.json({
@@ -291,30 +300,32 @@ export const deleteMe = async (req: AuthRequest, res: Response) => {
 };
 
 export const getNearby = async (req: AuthRequest, res: Response) => {
-  const lat = parseFloat(req.query.lat as string);
-  const lng = parseFloat(req.query.lng as string);
+  const lat = Number.parseFloat(req.query.lat as string);
+  const lng = Number.parseFloat(req.query.lng as string);
   const filterIntention = req.query.intention as string;
   const filterTag = req.query.tag as string;
-  const minAge = req.query.minAge ? parseInt(req.query.minAge as string) : undefined;
-  const maxAge = req.query.maxAge ? parseInt(req.query.maxAge as string) : undefined;
-  const maxDist = req.query.maxDist ? parseFloat(req.query.maxDist as string) : undefined;
+  const minAge = req.query.minAge ? Number.parseInt(req.query.minAge as string, 10) : undefined;
+  const maxAge = req.query.maxAge ? Number.parseInt(req.query.maxAge as string, 10) : undefined;
+  const maxDist = req.query.maxDist ? Number.parseFloat(req.query.maxDist as string) : undefined;
   const onlyVerified = req.query.onlyVerified === 'true';
   const hasSpotify = req.query.hasSpotify === 'true';
   const currentUserId = req.userId || 1;
 
   try {
     let nearby = memoryStore.users
-      .filter((u) => u.id !== currentUserId && !u.ghostMode && !memoryStore.isBlocked(currentUserId, u.id))
+      .filter((u) => u.id !== currentUserId && !u.ghostMode && !u.isBanned && !memoryStore.isBlocked(currentUserId, u.id))
       .map((u) => {
         let dist = 1.2;
-        if (!isNaN(lat) && !isNaN(lng)) {
+        if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
           const rawDist = memoryStore.calculateDistance(lat, lng, u.lat, u.lng);
           dist = rawDist > 80 ? (((u.id * 3.7) % 14) + 0.6) : Math.max(0.3, rawDist);
         }
+        const computedAge = u.birthDate ? calculateAge(u.birthDate) : u.age;
         return {
           id: u.id,
           name: u.name,
-          age: u.age,
+          age: computedAge,
+          birthDate: u.birthDate || null,
           bio: u.bio,
           avatarUrl: u.avatarUrl,
           photos: u.photos,
@@ -325,7 +336,7 @@ export const getNearby = async (req: AuthRequest, res: Response) => {
           spotify: u.spotify || { connected: false, username: '', topArtists: [] },
           isVerified: u.isVerified || false,
           approxDistanceOnly: u.approxDistanceOnly || false,
-          distance_km: parseFloat(dist.toFixed(1))
+          distance_km: Number.parseFloat(dist.toFixed(1))
         };
       });
 
@@ -334,18 +345,18 @@ export const getNearby = async (req: AuthRequest, res: Response) => {
     }
 
     if (filterTag && filterTag !== 'all') {
-      nearby = nearby.filter((u) => u.tags && u.tags.includes(filterTag));
+      nearby = nearby.filter((u) => u.tags?.includes(filterTag));
     }
 
-    if (minAge !== undefined && !isNaN(minAge)) {
+    if (minAge !== undefined && !Number.isNaN(minAge)) {
       nearby = nearby.filter((u) => u.age >= minAge);
     }
 
-    if (maxAge !== undefined && !isNaN(maxAge)) {
+    if (maxAge !== undefined && !Number.isNaN(maxAge)) {
       nearby = nearby.filter((u) => u.age <= maxAge);
     }
 
-    if (maxDist !== undefined && !isNaN(maxDist)) {
+    if (maxDist !== undefined && !Number.isNaN(maxDist)) {
       nearby = nearby.filter((u) => u.distance_km <= maxDist);
     }
 
@@ -354,7 +365,7 @@ export const getNearby = async (req: AuthRequest, res: Response) => {
     }
 
     if (hasSpotify) {
-      nearby = nearby.filter((u) => (u.spotify && u.spotify.connected) || !!u.anthem);
+      nearby = nearby.filter((u) => u.spotify?.connected || !!u.anthem);
     }
 
     nearby.sort((a, b) => a.distance_km - b.distance_km);
@@ -369,7 +380,7 @@ export const getNearby = async (req: AuthRequest, res: Response) => {
 export const likeUser = async (req: AuthRequest, res: Response) => {
   try {
     const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const targetUserId = parseInt(rawId as string);
+    const targetUserId = Number.parseInt(rawId as string, 10);
     const currentUserId = req.userId || 1;
 
     if (currentUserId === targetUserId) {
@@ -388,7 +399,7 @@ export const likeUser = async (req: AuthRequest, res: Response) => {
       createdAt: new Date()
     });
 
-    const mutual = memoryStore.matches.find(
+    const hasMutual = memoryStore.matches.some(
       (m) => m.fromUserId === targetUserId && m.toUserId === currentUserId && m.type === 'like'
     );
 
@@ -396,14 +407,14 @@ export const likeUser = async (req: AuthRequest, res: Response) => {
     const currentUser = memoryStore.users.find((u) => u.id === currentUserId);
 
     // Para la experiencia interactiva sáfica, activar celebración de match si hay mutuo o demostración
-    const isMatch = !!mutual || (targetUserId % 2 === 0);
+    const isMatch = hasMutual || (targetUserId % 2 === 0);
 
     const conv = memoryStore.getOrCreateConversation(currentUserId, targetUserId);
 
     res.json({
       success: true,
       isMatch,
-      message: isMatch ? '¡Ha surgido un Spark! ✨' : '¡Flechazo enviado! 💖',
+      message: isMatch ? '¡Ha surgido un Spark!' : '¡Flechazo enviado!',
       conversationId: conv.id,
       partner: {
         id: targetUser?.id || targetUserId,

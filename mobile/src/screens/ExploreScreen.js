@@ -16,25 +16,13 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { apiRequest } from '../api';
-import { getAvatarSource } from './ProfileScreen';
+import { getAvatarSource } from '../utils/avatar';
+import { INTENTIONS, INTENTION_LABELS } from '../constants';
 import ReportBlockModal from '../components/ReportBlockModal';
 import MatchCelebrationModal from '../components/MatchCelebrationModal';
 import ExploreFilterModal from '../components/ExploreFilterModal';
 
-const INTENTIONS = [
-  { id: 'all', label: 'Todas', icon: 'flame' },
-  { id: 'dating', label: 'Citas', icon: 'heart' },
-  { id: 'friends', label: 'Amistad', icon: 'people' },
-  { id: 'chat', label: 'Charlar', icon: 'cafe' },
-  { id: 'events', label: 'Planes', icon: 'ticket' }
-];
-
-export const INTENTION_LABELS = {
-  dating: 'Buscando Citas / Pareja',
-  friends: 'Buscando Amistades',
-  chat: 'Charlar y conocer gente',
-  events: 'Compañera de planes y eventos'
-};
+export { INTENTIONS, INTENTION_LABELS };
 
 export default function ExploreScreen({ onOpenChat }) {
   const { theme, isDarkMode } = useTheme();
@@ -138,7 +126,7 @@ export default function ExploreScreen({ onOpenChat }) {
         setSelectedUser(null);
         setMatchModalVisible(true);
       } else {
-        Alert.alert('¡Flechazo enviado! 💖', data.message || 'Le hemos avisado de que te gusta.');
+        Alert.alert('¡Flechazo enviado!', data.message || 'Le hemos avisado de que te gusta.');
       }
     } catch (err) {
       Alert.alert('Error', err.message);
